@@ -561,9 +561,10 @@ export function EpubWorkspace() {
       (comment) => comment.sectionId === activeSection.id,
     );
   }, [activeSection, summaryEnabled, ws.book]);
+  const readerFullscreenActive = Boolean(ws.book && isReaderFullscreen);
 
   const readerPanelProps = {
-    isFullscreen: isReaderFullscreen,
+    isFullscreen: readerFullscreenActive,
     onExitFullscreen: exitReaderFullscreen,
     bookTitle: ws.book?.fileName,
     sectionTitle: activeSection?.title ?? `选择${activeSectionUnitLabel}`,
@@ -645,7 +646,7 @@ export function EpubWorkspace() {
 
   return (
     <div className="reader-shell flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2 sm:gap-3 sm:p-3 md:gap-4 md:overflow-hidden md:p-4">
-      {!isReaderFullscreen ? (
+      {!readerFullscreenActive ? (
         <header className="reader-panel flex shrink-0 flex-col gap-3 rounded-lg p-3 backdrop-blur sm:rounded-xl sm:p-4 md:gap-4 md:p-5">
           <div className="flex flex-wrap items-start justify-between gap-2 sm:gap-3">
             <div className="flex min-w-0 items-start gap-3">
@@ -762,7 +763,7 @@ export function EpubWorkspace() {
         </header>
       ) : null}
 
-      {!isReaderFullscreen ? (
+      {!readerFullscreenActive ? (
         <div className="grid min-h-0 flex-1 gap-3 md:gap-4 xl:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
           <Card
             className={`reader-panel-subtle min-h-0 min-w-0 flex-col rounded-xl ${
@@ -1198,13 +1199,13 @@ export function EpubWorkspace() {
         </div>
       ) : null}
 
-      {!isReaderFullscreen ? (
+      {!readerFullscreenActive ? (
         <p className="reader-pill hidden w-fit shrink-0 rounded-lg px-2.5 py-1 text-xs sm:block">
           数据仅存于本机浏览器（IndexedDB + localStorage）。AI 请求从浏览器直连模型服务。
         </p>
       ) : null}
 
-      {ws.book && isReaderFullscreen ? (
+      {readerFullscreenActive ? (
         <EpubReaderPanel {...readerPanelProps} />
       ) : null}
 

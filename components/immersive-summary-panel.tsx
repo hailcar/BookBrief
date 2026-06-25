@@ -21,8 +21,11 @@ import {
 } from "lucide-react";
 import { SummaryMarkdown } from "@/components/summary-markdown";
 import { Button } from "@/components/ui/button";
+import {
+  getBrowserStorageItem,
+  setBrowserStorageItem,
+} from "@/lib/browser-storage";
 import type { InlineSummaryBubble, SectionSummary } from "@/lib/types";
-import { isMobileViewport } from "@/lib/viewport";
 
 type Props = {
   sectionTitle: string;
@@ -49,6 +52,7 @@ type Props = {
 };
 
 const DRAG_HANDLE_CLASS = "summary-panel-drag-handle";
+const PANEL_STATE_KEY = "summary_epub_immersive_summary_panel";
 const EDGE_GUARD = 12;
 const DRAG_MOVE_THRESHOLD = 4;
 
@@ -63,8 +67,62 @@ type DragPointerState = {
   startY: number;
   startPanelX: number;
   startPanelY: number;
+  suppressClickOnDrag: boolean;
   moved: boolean;
 };
+
+type PersistedPanelState = {
+  open: boolean;
+  position: PanelPoint | null;
+  scrollTop: number;
+};
+
+const DEFAULT_PANEL_STATE: PersistedPanelState = {
+  open: false,
+  position: null,
+  scrollTop: 0,
+};
+
+function validPanelPoint(value: unknown): PanelPoint | null {
+  if (!value || typeof value !== "object") return null;
+  const point = value as Partial<PanelPoint>;
+  if (
+    typeof point.x !== "number" ||
+    typeof point.y !== "number" ||
+    !Number.isFinite(point.x) ||
+    !Number.isFinite(point.y)
+  ) {
+    return null;
+  }
+  return {
+    x: point.x,
+    y: point.y,
+  };
+}
+
+function loadPersistedPanelState(): PersistedPanelState {
+  try {
+    const raw = getBrowserStorageItem(PANEL_STATE_KEY);
+    if (!raw) return DEFAULT_PANEL_STATE;
+    const parsed = JSON.parse(raw) as Partial<PersistedPanelState>;
+    return {
+      open: parsed.open === true,
+      position: validPanelPoint(parsed.position),
+      scrollTop:
+        typeof parsed.scrollTop === "number" &&
+        Number.isFinite(parsed.scrollTop) &&
+        parsed.scrollTop > 0
+          ? parsed.scrollTop
+          : 0,
+    };
+  } catch {
+    return DEFAULT_PANEL_STATE;
+  }
+}
+
+function savePersistedPanelState(state: PersistedPanelState): void {
+  setBrowserStorageItem(PANEL_STATE_KEY, JSON.stringify(state));
+}
 
 function setPointerCaptureIfPossible(element: HTMLElement | null, pointerId: number) {
   try {
@@ -133,18 +191,15 @@ export function ImmersiveSummaryPanel({
   const [position, setPosition] = useState<PanelPoint | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<DragPointerState | null>(null);
+  const suppressNextCollapsedClickRef = useRef(false);
   const panelRef = useRef<HTMLElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const panelStateRef = useRef<PersistedPanelState>(DEFAULT_PANEL_STATE);
+  const pendingScrollTopRef = useRef<number | null>(null);
+  const [panelStateRestored, setPanelStateRestored] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     () => new Set(["chapter"]),
   );
-
-  useEffect(() => {
-    const restore = window.setTimeout(() => {
-      setOpen(!isMobileViewport());
-    }, 0);
-    return () => window.clearTimeout(restore);
-  }, []);
 
   const status = summaryStatusLabel({
     isSummaryPlaceholder,
@@ -239,6 +294,54 @@ export function ImmersiveSummaryPanel({
     [clampPanelPosition],
   );
 
+  const persistPanelState = useCallback(
+    (nextState: Partial<PersistedPanelState> = {}) => {
+      if (!panelStateRestored) return;
+      const current = panelStateRef.current;
+      const persisted = {
+        open,
+        position,
+        scrollTop: scrollRef.current?.scrollTop ?? current.scrollTop,
+        ...nextState,
+      };
+      panelStateRef.current = persisted;
+      savePersistedPanelState(persisted);
+    },
+    [open, panelStateRestored, position],
+  );
+
+  useEffect(() => {
+    const restore = window.setTimeout(() => {
+      const persisted = loadPersistedPanelState();
+      panelStateRef.current = persisted;
+      pendingScrollTopRef.current = persisted.scrollTop;
+      setOpen(persisted.open);
+      setPosition(persisted.position);
+      setPanelStateRestored(true);
+    }, 0);
+    return () => window.clearTimeout(restore);
+  }, []);
+
+  useEffect(() => {
+    persistPanelState({ open });
+  }, [open, persistPanelState]);
+
+  useEffect(() => {
+    persistPanelState({ position });
+  }, [persistPanelState, position]);
+
+  useEffect(() => {
+    if (!open || pendingScrollTopRef.current === null) return;
+    const scrollTop = pendingScrollTopRef.current;
+    const restore = window.requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollTop;
+      }
+      pendingScrollTopRef.current = null;
+    });
+    return () => window.cancelAnimationFrame(restore);
+  }, [items.length, open]);
+
   const startDrag = useCallback(
     (event: ReactPointerEvent<HTMLElement>) => {
       if (event.button > 0) return;
@@ -251,25 +354,20 @@ export function ImmersiveSummaryPanel({
       if (!position) {
         setPosition(initialPosition);
       }
-      if (typeof window !== "undefined") {
-        (window as Window & { __immersiveDragStartCount?: number }).__immersiveDragStartCount =
-          ((window as Window & { __immersiveDragStartCount?: number })
-            .__immersiveDragStartCount ?? 0) + 1;
-      }
-
       dragStateRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         startPanelX: initialPosition.x,
         startPanelY: initialPosition.y,
+        suppressClickOnDrag: !open,
         moved: false,
       };
       setIsDragging(true);
       event.preventDefault();
       setPointerCaptureIfPossible(panelRef.current, event.pointerId);
     },
-    [clampPanelPosition, position],
+    [clampPanelPosition, open, position],
   );
 
   useEffect(() => {
@@ -294,17 +392,15 @@ export function ImmersiveSummaryPanel({
         x: dragState.startPanelX + deltaX,
         y: dragState.startPanelY + deltaY,
       });
-      if (typeof window !== "undefined") {
-        (window as Window & { __immersiveDragMoveCount?: number }).__immersiveDragMoveCount =
-          ((window as Window & { __immersiveDragMoveCount?: number })
-            .__immersiveDragMoveCount ?? 0) + 1;
-      }
     };
 
     const stopDrag = (event: PointerEvent) => {
       const dragState = dragStateRef.current;
       if (!dragState || dragState.pointerId !== event.pointerId) return;
 
+      if (dragState.moved && dragState.suppressClickOnDrag) {
+        suppressNextCollapsedClickRef.current = true;
+      }
       dragStateRef.current = null;
       setIsDragging(false);
       releasePointerCaptureIfPossible(panelRef.current, event.pointerId);
@@ -373,18 +469,27 @@ export function ImmersiveSummaryPanel({
     [],
   );
 
+  const openCollapsedPanel = useCallback(() => {
+    if (suppressNextCollapsedClickRef.current) {
+      suppressNextCollapsedClickRef.current = false;
+      return;
+    }
+    setOpen(true);
+  }, []);
+
   if (!open) {
     return (
-        <button
-          type="button"
-          ref={panelRef as RefObject<HTMLButtonElement>}
-          className={`pointer-events-auto z-[10002] min-h-11 rounded-full border border-neutral-200/80 bg-white/85 px-4 py-2 text-xs font-medium text-neutral-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-neutral-950 md:min-h-0 md:px-3 ${
-            position
-              ? ""
-              : "absolute left-4 bottom-[calc(env(safe-area-inset-bottom)+1rem)] md:left-auto md:right-6 md:top-1/2 md:bottom-auto md:-translate-y-1/2"
-          }`}
+      <button
+        type="button"
+        ref={panelRef as RefObject<HTMLButtonElement>}
+        className={`summary-panel-collapsed-drag-handle pointer-events-auto z-[10002] min-h-11 cursor-grab touch-none rounded-full border border-neutral-200/80 bg-white/85 px-4 py-2 text-xs font-medium text-neutral-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-neutral-950 active:cursor-grabbing md:min-h-0 md:px-3 ${
+          position
+            ? ""
+            : "absolute right-4 top-4 md:right-6 md:top-6"
+        }`}
         style={panelStyle}
-        onClick={() => setOpen(true)}
+        onPointerDown={startDrag}
+        onClick={openCollapsedPanel}
       >
         AI 总结
       </button>
@@ -402,35 +507,35 @@ export function ImmersiveSummaryPanel({
         <div
           className={`${DRAG_HANDLE_CLASS} ${
             isDragging ? "cursor-grabbing" : "cursor-grab"
-          } flex min-w-0 touch-none items-center gap-2`}
+          } flex min-w-0 flex-1 touch-none items-center gap-2`}
           onPointerDown={startDrag}
           role="button"
           aria-label="拖动 AI 总结面板"
         >
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-700" />
-            <p className="text-sm font-semibold">AI 总结</p>
-            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500">
-              {status}
-            </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-amber-700" />
+              <p className="text-sm font-semibold">AI 总结</p>
+              <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500">
+                {status}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-xs text-neutral-500">
+              已选 {selectedBlockCount} 段
+              {selectionAnchorLabel ? ` · 锚点：${selectionAnchorLabel}` : ""} ·{" "}
+              {sectionTitle}
+            </p>
+            {selectedBlockCount > 0 && !summarizing ? (
+              <p className="mt-1 text-xs text-neutral-400">
+                Ctrl/Cmd 选择前后两段，再点选中中间所有段。
+              </p>
+            ) : null}
+            {summaryQueueLabel ? (
+              <p className="mt-1 truncate text-xs text-neutral-400">
+                {summaryQueueLabel}
+              </p>
+            ) : null}
           </div>
-          <p className="mt-1 truncate text-xs text-neutral-500">
-            已选 {selectedBlockCount} 段
-            {selectionAnchorLabel ? ` · 锚点：${selectionAnchorLabel}` : ""} ·{" "}
-            {sectionTitle}
-          </p>
-          {selectedBlockCount > 0 && !summarizing ? (
-            <p className="mt-1 text-xs text-neutral-400">
-              Ctrl/Cmd 选择前后两段，再点选中中间所有段。
-            </p>
-          ) : null}
-          {summaryQueueLabel ? (
-            <p className="mt-1 truncate text-xs text-neutral-400">
-              {summaryQueueLabel}
-            </p>
-          ) : null}
-        </div>
         </div>
         <button
           type="button"
@@ -515,6 +620,9 @@ export function ImmersiveSummaryPanel({
       <div
         ref={scrollRef}
         className="summary-panel-scroll min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-4 py-3"
+        onScroll={(event) => {
+          persistPanelState({ scrollTop: event.currentTarget.scrollTop });
+        }}
       >
         {items.length > 0 ? (
           <div className="space-y-3">

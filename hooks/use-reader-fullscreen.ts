@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  getBrowserStorageItem,
-  setBrowserStorageItem,
+  getBrowserSessionItem,
+  setBrowserSessionItem,
 } from "@/lib/browser-storage";
 
 /** Notify iframe-injected layout scripts (fit/scale) after viewport changes. */
@@ -15,11 +15,11 @@ export function dispatchReaderViewportRelayout(): void {
 const READER_FULLSCREEN_KEY = "summary_epub_reader_fullscreen";
 
 function loadPersistedReaderFullscreen(): boolean {
-  return getBrowserStorageItem(READER_FULLSCREEN_KEY) === "1";
+  return getBrowserSessionItem(READER_FULLSCREEN_KEY) === "1";
 }
 
 function savePersistedReaderFullscreen(value: boolean): void {
-  setBrowserStorageItem(READER_FULLSCREEN_KEY, value ? "1" : "0");
+  setBrowserSessionItem(READER_FULLSCREEN_KEY, value ? "1" : "0");
 }
 
 export function useReaderFullscreen() {

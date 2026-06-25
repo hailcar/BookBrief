@@ -98,8 +98,14 @@ describe("selected paragraph summary workflow", () => {
 
     expect(fullscreenHook).toContain("summary_epub_reader_fullscreen");
     expect(fullscreenHook).toContain("loadPersistedReaderFullscreen");
+    expect(fullscreenHook).toContain("getBrowserSessionItem(READER_FULLSCREEN_KEY)");
+    expect(fullscreenHook).toContain("setBrowserSessionItem(READER_FULLSCREEN_KEY");
+    expect(fullscreenHook).not.toContain("getBrowserStorageItem(READER_FULLSCREEN_KEY)");
     expect(fullscreenHook).toContain("savePersistedReaderFullscreen(true)");
     expect(fullscreenHook).toContain("savePersistedReaderFullscreen(false)");
+    expect(source("components/epub-workspace.tsx")).toContain(
+      "const readerFullscreenActive = Boolean(ws.book && isReaderFullscreen)",
+    );
     expect(workspaceHook).toContain("summary_epub_active_book_id");
     expect(workspaceHook).toContain("getBrowserSessionItem(ACTIVE_BOOK_KEY)");
     expect(workspaceHook).toContain("setBrowserSessionItem(ACTIVE_BOOK_KEY");

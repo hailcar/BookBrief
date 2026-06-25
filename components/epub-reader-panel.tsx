@@ -410,7 +410,6 @@ export function EpubReaderPanel({
 
         {summaryAvailable ? (
           <ImmersiveSummaryPanel
-            key={`${activeBlockId ?? "none"}:${activeSummaryKey ?? "none"}`}
             sectionTitle={sectionTitle}
             summaryText={summaryText}
             summary={summary}
