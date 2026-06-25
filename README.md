@@ -31,6 +31,14 @@ npm run dev
 
 开发服务默认地址为 <http://localhost:3000>。
 
+测试用网页：<https://bb.vim.li>。
+
+AList 中预览 EPUB/PDF 时可使用：
+
+```text
+https://bb.vim.li/?url=$e_url
+```
+
 常用校验命令：
 
 ```bash
