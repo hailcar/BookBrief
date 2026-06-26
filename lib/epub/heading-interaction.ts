@@ -427,6 +427,7 @@ export const HEADING_INTERACTION_SCRIPT = `
   var currentSelectedBlockIds = [];
   var currentSelectionAction = null;
   var currentTextSelection = null;
+  var textSelectionActionTimer = null;
   var currentAnnotationsById = {};
   function clearHighlights() {
     document.querySelectorAll('[data-se-highlight], [data-se-active-block]').forEach(function (el) {
@@ -468,6 +469,10 @@ export const HEADING_INTERACTION_SCRIPT = `
     });
   }
   function clearTextSelectionAction() {
+    if (textSelectionActionTimer) {
+      window.clearTimeout(textSelectionActionTimer);
+      textSelectionActionTimer = null;
+    }
     currentTextSelection = null;
     document.querySelectorAll('.summary-epub-text-selection-action').forEach(function (el) {
       el.remove();
@@ -1288,9 +1293,20 @@ export const HEADING_INTERACTION_SCRIPT = `
     });
   }
   function onReaderMouseUp() {
-    window.setTimeout(function () {
+    scheduleTextSelectionAction(0);
+  }
+  function scheduleTextSelectionAction(delay) {
+    if (textSelectionActionTimer) window.clearTimeout(textSelectionActionTimer);
+    textSelectionActionTimer = window.setTimeout(function () {
+      textSelectionActionTimer = null;
       renderTextSelectionAction(selectionPayload());
-    }, 0);
+    }, delay);
+  }
+  function onReaderTouchEnd() {
+    scheduleTextSelectionAction(120);
+  }
+  function onReaderSelectionChange() {
+    scheduleTextSelectionAction(80);
   }
   function onReaderMouseDown(ev) {
     if (ev.target && ev.target.closest && ev.target.closest('.summary-epub-text-selection-action')) return;
@@ -1366,6 +1382,8 @@ export const HEADING_INTERACTION_SCRIPT = `
     window.addEventListener('message', onMessage);
     document.addEventListener('mousedown', onReaderMouseDown, true);
     document.addEventListener('mouseup', onReaderMouseUp);
+    document.addEventListener('touchend', onReaderTouchEnd);
+    document.addEventListener('selectionchange', onReaderSelectionChange);
     document.addEventListener('click', onReaderClick);
     scheduleReaderWindowCheck();
   }

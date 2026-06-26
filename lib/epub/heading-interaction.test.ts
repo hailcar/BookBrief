@@ -103,7 +103,19 @@ describe("heading summary floating rail", () => {
       "summary-epub-comment-text-selection",
     );
     expect(HEADING_INTERACTION_SCRIPT).toContain(
+      "summary-epub-translate-text-selection",
+    );
+    expect(HEADING_INTERACTION_SCRIPT).toContain(
       "summary-epub-text-selection-action",
+    );
+    expect(HEADING_INTERACTION_SCRIPT).toContain(
+      "document.addEventListener('selectionchange', onReaderSelectionChange)",
+    );
+    expect(HEADING_INTERACTION_SCRIPT).toContain(
+      "document.addEventListener('touchend', onReaderTouchEnd)",
+    );
+    expect(HEADING_INTERACTION_SCRIPT).toContain(
+      "function scheduleTextSelectionAction",
     );
     expect(HEADING_INTERACTION_SCRIPT).toContain("function wrapQuoteInBlock");
     expect(HEADING_INTERACTION_SCRIPT).toContain("range.surroundContents(mark)");
