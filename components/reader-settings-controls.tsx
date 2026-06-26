@@ -4,9 +4,11 @@ import type { EpubDisplayMode } from "@/lib/epub-display";
 import { EPUB_DISPLAY_MODE_LABELS } from "@/lib/epub-display";
 import {
   READER_CONTENT_WIDTH_LABELS,
+  READER_FONT_FAMILY_LABELS,
   READER_FONT_SIZE_LABELS,
   READER_IMAGE_MODE_LABELS,
   type ReaderContentWidth,
+  type ReaderFontFamily,
   type ReaderFontSize,
   type ReaderImageMode,
   type ReaderSettings,
@@ -73,6 +75,17 @@ export function ReaderSettingsControls({
           label: EPUB_DISPLAY_MODE_LABELS[id],
         }))}
         onChange={onDisplayModeChange}
+      />
+      <Segmented
+        label="字体"
+        value={readerSettings.fontFamily}
+        options={(["book", "serif", "system"] as const).map((id) => ({
+          id,
+          label: READER_FONT_FAMILY_LABELS[id],
+        }))}
+        onChange={(v) =>
+          onPatchReaderSettings({ fontFamily: v as ReaderFontFamily })
+        }
       />
       <Segmented
         label="字号"

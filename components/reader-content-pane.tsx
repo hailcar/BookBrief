@@ -5,6 +5,7 @@ import { EpubSectionPreview } from "@/components/epub-section-preview";
 import { PdfReader } from "@/components/pdf-reader";
 import { ReaderSummaryPane } from "@/components/reader-summary-pane";
 import { Button } from "@/components/ui/button";
+import { useEpubFontFaces } from "@/hooks/use-epub-font-faces";
 import type { EpubDisplayMode, EpubReaderLayout } from "@/lib/epub-display";
 import type { ReaderSettings } from "@/lib/reader-settings";
 import type { ReaderPanelTab } from "@/components/epub-reader-toolbar";
@@ -125,6 +126,10 @@ export function ReaderContentPane({
   onReaderWindowSectionChange,
   onEnterImmersive,
 }: Props) {
+  const epubFontFaces = useEpubFontFaces(
+    documentFormat === "pdf" ? null : bookBuffer,
+  );
+
   const withEnterImmersive = (content: React.ReactNode) => {
     if (layout === "fullscreen" || !onEnterImmersive) return content;
     return (
@@ -205,6 +210,7 @@ export function ReaderContentPane({
         title={sectionTitle}
         displayMode={displayMode}
         readerSettings={readerSettings}
+        fontFaces={epubFontFaces}
         layout={layout}
         sectionId={sectionId}
         highlightBlockIds={highlightBlockIds}

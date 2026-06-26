@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyEpubDisplayMode } from "@/lib/epub-display";
+import { DEFAULT_READER_SETTINGS } from "@/lib/reader-settings";
 
 describe("applyEpubDisplayMode", () => {
   function styleById(html: string, id: string): string {
@@ -55,6 +56,44 @@ describe("applyEpubDisplayMode", () => {
     expect(globalCss).toMatch(/display:\s*block/);
     expect(globalCss).toMatch(/margin:\s*1\.2em auto/);
     expect(globalCss).toMatch(/max-width:\s*100%\s*!important/);
+  });
+
+  it("uses EPUB font faces and font stacks in global reading mode", () => {
+    const html = applyEpubDisplayMode(
+      "<h1>Heading</h1><p>Body <code>code</code></p>",
+      "global",
+      { ...DEFAULT_READER_SETTINGS, fontFamily: "book" },
+      "embedded",
+      [
+        {
+          family: "DejaVu Serif",
+          url: "blob:dejavu-serif",
+          weight: 400,
+          style: "normal",
+          format: "opentype",
+          path: "OEBPS/DejaVuSerif.otf",
+        },
+        {
+          family: "Ubuntu Mono",
+          url: "blob:ubuntu-mono",
+          weight: 400,
+          style: "normal",
+          format: "opentype",
+          path: "OEBPS/UbuntuMono-Regular.otf",
+        },
+      ],
+    );
+
+    const globalCss = styleById(html, "summary-epub-global-mode");
+
+    expect(globalCss).toContain('font-family: "DejaVu Serif";');
+    expect(globalCss).toContain('src: url("blob:dejavu-serif")');
+    expect(globalCss).toContain(
+      'font-family: "DejaVu Serif", "Source Serif 4"',
+    );
+    expect(globalCss).toContain(
+      'font-family: "Ubuntu Mono", "Source Code Pro"',
+    );
   });
 
   it("removes active EPUB content before adding the reader shell", () => {

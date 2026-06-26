@@ -22,6 +22,7 @@ describe("getReaderSettingsSnapshot", () => {
 
   it("server snapshot is DEFAULT_READER_SETTINGS", () => {
     expect(DEFAULT_READER_SETTINGS.fontSize).toBe("default");
+    expect(DEFAULT_READER_SETTINGS.fontFamily).toBe("book");
   });
 
   it("keeps reader settings usable when localStorage writes fail", () => {
@@ -39,12 +40,14 @@ describe("getReaderSettingsSnapshot", () => {
     expect(
       saveReaderSettings({
         fontSize: "large",
+        fontFamily: "serif",
         contentWidth: "wide",
         imageMode: "full-width",
       }),
     ).toBe(false);
     expect(loadReaderSettings()).toEqual({
       fontSize: "large",
+      fontFamily: "serif",
       contentWidth: "wide",
       imageMode: "full-width",
     });

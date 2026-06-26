@@ -4,11 +4,13 @@ import {
 } from "@/lib/browser-storage";
 
 export type ReaderFontSize = "small" | "default" | "large";
+export type ReaderFontFamily = "book" | "serif" | "system";
 export type ReaderContentWidth = "narrow" | "standard" | "wide" | "full";
 export type ReaderImageMode = "contain" | "original" | "full-width";
 
 export type ReaderSettings = {
   fontSize: ReaderFontSize;
+  fontFamily: ReaderFontFamily;
   contentWidth: ReaderContentWidth;
   imageMode: ReaderImageMode;
 };
@@ -17,6 +19,7 @@ const KEY = "summary_epub_reader_settings";
 
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   fontSize: "default",
+  fontFamily: "book",
   contentWidth: "standard",
   imageMode: "contain",
 };
@@ -40,6 +43,12 @@ export const READER_FONT_SIZE_LABELS: Record<ReaderFontSize, string> = {
   large: "大",
 };
 
+export const READER_FONT_FAMILY_LABELS: Record<ReaderFontFamily, string> = {
+  book: "EPUB",
+  serif: "经典",
+  system: "系统",
+};
+
 export const READER_CONTENT_WIDTH_LABELS: Record<ReaderContentWidth, string> = {
   narrow: "窄",
   standard: "标准",
@@ -57,6 +66,10 @@ function isFontSize(v: string): v is ReaderFontSize {
   return v === "small" || v === "default" || v === "large";
 }
 
+function isFontFamily(v: string): v is ReaderFontFamily {
+  return v === "book" || v === "serif" || v === "system";
+}
+
 function isContentWidth(v: string): v is ReaderContentWidth {
   return v === "narrow" || v === "standard" || v === "wide" || v === "full";
 }
@@ -71,6 +84,7 @@ export function loadReaderSettings(): ReaderSettings {
     if (!raw) return DEFAULT_READER_SETTINGS;
     const parsed = JSON.parse(raw) as Partial<ReaderSettings>;
     const fontSize = parsed.fontSize;
+    const fontFamily = parsed.fontFamily;
     const contentWidth = parsed.contentWidth;
     const imageMode = parsed.imageMode;
     return {
@@ -78,6 +92,10 @@ export function loadReaderSettings(): ReaderSettings {
         fontSize !== undefined && isFontSize(fontSize)
           ? fontSize
           : DEFAULT_READER_SETTINGS.fontSize,
+      fontFamily:
+        fontFamily !== undefined && isFontFamily(fontFamily)
+          ? fontFamily
+          : DEFAULT_READER_SETTINGS.fontFamily,
       contentWidth:
         contentWidth !== undefined && isContentWidth(contentWidth)
           ? contentWidth
@@ -103,7 +121,7 @@ let cachedReaderKey = "";
 export function getReaderSettingsSnapshot(): ReaderSettings {
   if (typeof window === "undefined") return DEFAULT_READER_SETTINGS;
   const next = loadReaderSettings();
-  const key = `${next.fontSize}\0${next.contentWidth}\0${next.imageMode}`;
+  const key = `${next.fontSize}\0${next.fontFamily}\0${next.contentWidth}\0${next.imageMode}`;
   if (key === cachedReaderKey) return cachedReaderSnapshot;
   cachedReaderKey = key;
   cachedReaderSnapshot = next;

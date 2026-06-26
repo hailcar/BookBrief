@@ -6,9 +6,11 @@ import {
   DEFAULT_READER_SETTINGS,
   READER_CONTENT_MAX_PX,
   READER_FONT_SIZE_PX,
+  type ReaderFontFamily,
   type ReaderImageMode,
   type ReaderSettings,
 } from "@/lib/reader-settings";
+import type { EpubFontFace } from "@/lib/epub/fonts";
 import {
   getBrowserStorageItem,
   setBrowserStorageItem,
@@ -38,6 +40,35 @@ export function saveEpubDisplayMode(mode: EpubDisplayMode): boolean {
 }
 
 export type EpubReaderLayout = "embedded" | "fullscreen";
+
+type ReaderFontStack = {
+  body: string;
+  heading: string;
+  code: string;
+};
+
+const READER_FONT_STACKS: Record<ReaderFontFamily, ReaderFontStack> = {
+  book: {
+    body:
+      '"DejaVu Serif", "Source Serif 4", "Noto Serif", "Noto Serif SC", "Songti SC", Georgia, serif',
+    heading:
+      '"DejaVu Sans", "Source Sans 3", "Noto Sans", "Noto Sans SC", Arial, sans-serif',
+    code:
+      '"Ubuntu Mono", "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, monospace',
+  },
+  serif: {
+    body: 'Literata, "Songti SC", "Noto Serif SC", Georgia, serif',
+    heading: 'Literata, "Songti SC", "Noto Serif SC", Georgia, serif',
+    code: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  },
+  system: {
+    body:
+      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif',
+    heading:
+      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif',
+    code: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  },
+};
 
 const SHARED_SHELL = `
 <style id="summary-epub-shell">
@@ -133,22 +164,49 @@ function publisherImageCss(): string {
   }`;
 }
 
+function escapeCssString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, " ");
+}
+
+function buildFontFaceCss(fontFaces: EpubFontFace[]): string {
+  if (!fontFaces.length) return "";
+  return fontFaces
+    .map(
+      (face) => `@font-face {
+    font-family: "${escapeCssString(face.family)}";
+    font-style: ${face.style};
+    font-weight: ${face.weight};
+    font-display: swap;
+    src: url("${escapeCssString(face.url)}") format("${face.format}");
+  }`,
+    )
+    .join("\n");
+}
+
 function buildGlobalTypo(
   settings: ReaderSettings,
   layout: EpubReaderLayout,
+  fontFaces: EpubFontFace[],
 ): string {
   const fontPx = READER_FONT_SIZE_PX[settings.fontSize];
   const maxPx = READER_CONTENT_MAX_PX[settings.contentWidth];
   const pad =
     layout === "fullscreen" ? "32px 40px 40px" : "2rem 1.75rem 2.25rem";
+  const fontStack = READER_FONT_STACKS[settings.fontFamily];
+  const fontFaceCss =
+    settings.fontFamily === "book" ? buildFontFaceCss(fontFaces) : "";
 
   return `
 <style id="summary-epub-global-mode">
+  ${fontFaceCss}
   #summary-epub-root {
     max-width: ${maxPx}px;
     margin-inline: auto;
     padding: ${pad};
-    font-family: Literata, "Songti SC", "Noto Serif SC", Georgia, serif;
+    font-family: ${fontStack.body};
     font-size: ${fontPx}px;
     line-height: 1.75;
     letter-spacing: 0.01em;
@@ -160,7 +218,7 @@ function buildGlobalTypo(
     margin-block: 0 1em;
   }
   #summary-epub-root :where(h1, h2, h3, h4, h5, h6) {
-    font-family: Literata, "Songti SC", "Noto Serif SC", Georgia, serif;
+    font-family: ${fontStack.heading};
     line-height: 1.35;
     font-weight: 600;
     margin-block: 1.35em 0.55em;
@@ -194,7 +252,7 @@ function buildGlobalTypo(
   }
   #summary-epub-root pre,
   #summary-epub-root code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: ${fontStack.code};
     font-size: 0.88em;
   }
   #summary-epub-root pre {
@@ -230,10 +288,11 @@ function buildInject(
   mode: EpubDisplayMode,
   settings: ReaderSettings,
   layout: EpubReaderLayout,
+  fontFaces: EpubFontFace[],
 ): string {
   const typo =
     mode === "global"
-      ? buildGlobalTypo(settings, layout)
+      ? buildGlobalTypo(settings, layout, fontFaces)
       : buildPublisherTypo();
   return `${SHARED_SHELL}${typo}${HEADING_INTERACTION_STYLE}`;
 }
@@ -300,9 +359,10 @@ export function applyEpubDisplayMode(
   mode: EpubDisplayMode,
   readerSettings: ReaderSettings = DEFAULT_READER_SETTINGS,
   layout: EpubReaderLayout = "embedded",
+  fontFaces: EpubFontFace[] = [],
 ): string {
   return injectIntoHtml(
     prepareEpubPreviewHtml(html),
-    buildInject(mode, readerSettings, layout),
+    buildInject(mode, readerSettings, layout, fontFaces),
   );
 }

@@ -25,9 +25,11 @@ import { EPUB_DISPLAY_MODE_LABELS } from "@/lib/epub-display";
 import type { ReaderSettings } from "@/lib/reader-settings";
 import {
   READER_CONTENT_WIDTH_LABELS,
+  READER_FONT_FAMILY_LABELS,
   READER_FONT_SIZE_LABELS,
   READER_IMAGE_MODE_LABELS,
   type ReaderContentWidth,
+  type ReaderFontFamily,
   type ReaderFontSize,
   type ReaderImageMode,
 } from "@/lib/reader-settings";
@@ -618,6 +620,23 @@ export function EpubReaderPanel({
                           }),
                         )}
                         onChange={onDisplayModeChange}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs text-neutral-500">字体</p>
+                      <MiniOption
+                        value={readerSettings.fontFamily}
+                        options={(["book", "serif", "system"] as const).map(
+                          (id) => ({
+                            id,
+                            label: READER_FONT_FAMILY_LABELS[id],
+                          }),
+                        )}
+                        onChange={(fontFamily) =>
+                          onPatchReaderSettings({
+                            fontFamily: fontFamily as ReaderFontFamily,
+                          })
+                        }
                       />
                     </div>
                     <div className="space-y-1">

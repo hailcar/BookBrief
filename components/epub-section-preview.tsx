@@ -7,6 +7,7 @@ import {
   type EpubDisplayMode,
   type EpubReaderLayout,
 } from "@/lib/epub-display";
+import type { EpubFontFace } from "@/lib/epub/fonts";
 import {
   installHeadingInteractionRuntime,
   type HeadingInteractionBridge,
@@ -24,6 +25,7 @@ type Props = {
   title?: string;
   displayMode: EpubDisplayMode;
   readerSettings: ReaderSettings;
+  fontFaces?: EpubFontFace[];
   layout?: EpubReaderLayout;
   sectionId?: string | null;
   className?: string;
@@ -73,6 +75,7 @@ type ReaderWindowRestoreGuard = {
 const FRAME_FADE_MS = 180;
 const READER_WINDOW_RESTORE_GUARD_MS = 1400;
 const READER_WINDOW_RESTORE_OFFSET_TOLERANCE = 180;
+const EMPTY_FONT_FACES: EpubFontFace[] = [];
 
 function relayoutIframeDocument(
   iframe: HTMLIFrameElement | null,
@@ -156,6 +159,7 @@ export function EpubSectionPreview({
   title,
   displayMode,
   readerSettings,
+  fontFaces = EMPTY_FONT_FACES,
   layout = "embedded",
   sectionId,
   className,
@@ -229,8 +233,9 @@ export function EpubSectionPreview({
   }, [onClearSelection]);
 
   const srcDoc = useMemo(
-    () => applyEpubDisplayMode(html, displayMode, readerSettings, layout),
-    [html, displayMode, readerSettings, layout],
+    () =>
+      applyEpubDisplayMode(html, displayMode, readerSettings, layout, fontFaces),
+    [html, displayMode, readerSettings, layout, fontFaces],
   );
   const [frameDocs, setFrameDocs] = useState<[string | null, string | null]>([
     srcDoc,
