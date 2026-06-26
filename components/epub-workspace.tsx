@@ -1257,7 +1257,9 @@ export function EpubWorkspace() {
           onExportBook={ws.exportBookBackup}
           onExportCurrentBook={ws.exportCurrentBookBackup}
           onExportLibrary={ws.exportLibraryBackup}
+          onExportSettings={ws.exportSettingsBackup}
           onImportBackup={ws.importBackupFile}
+          onImportSettingsBackup={ws.importSettingsBackupFile}
         />
       ) : null}
 

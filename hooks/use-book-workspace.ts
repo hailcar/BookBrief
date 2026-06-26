@@ -26,10 +26,14 @@ import {
   buildExportPayload,
   buildMarkdownReadingNotes,
   buildLibraryBackupPayload,
+  buildSettingsBackupFilePayload,
   downloadMarkdown,
   downloadJson,
   markdownFileNameForBook,
   parseBackupPayload,
+  parseSettingsBackupPayload,
+  settingsBackupFileName,
+  writeSettingsFromBackup,
   writeReaderStateFromBackup,
 } from "@/lib/export";
 import {
@@ -80,6 +84,7 @@ import {
   type SummarizeRequestOptions,
 } from "@/lib/summarize-client";
 import type {
+  BackupSettingsPayload,
   SelectedBlocksSummaryResult,
   EpubBlock,
   EpubComment,
@@ -130,6 +135,11 @@ export type ImportBackupResult = {
   imported: number;
   skipped: number;
   fileNames: string[];
+};
+
+export type ImportSettingsBackupResult = {
+  settings: BackupSettingsPayload;
+  settingsImported: boolean;
 };
 
 type ReaderState = {
@@ -2198,6 +2208,10 @@ export function useBookWorkspace() {
     downloadJson(backupFileNameForLibrary(), payload);
   }, [library, loadBookBackupSource]);
 
+  const exportSettingsBackup = useCallback(() => {
+    downloadJson(settingsBackupFileName(), buildSettingsBackupFilePayload());
+  }, []);
+
   const findExistingBookForBackup = useCallback(
     async (backupBook: ParsedBackupBook): Promise<StoredBook | null> => {
       if (backupBook.id) {
@@ -2289,6 +2303,20 @@ export function useBookWorkspace() {
       };
     },
     [book, findExistingBookForBackup, openBook, refreshLibrary],
+  );
+
+  const importSettingsBackupFile = useCallback(
+    async (file: File): Promise<ImportSettingsBackupResult> => {
+      const settings = parseSettingsBackupPayload(JSON.parse(await file.text()));
+      if (!settings) {
+        throw new Error("备份文件中没有可导入的配置");
+      }
+      return {
+        settings,
+        settingsImported: writeSettingsFromBackup(settings),
+      };
+    },
+    [],
   );
 
   const removeBook = useCallback(
@@ -2422,7 +2450,9 @@ export function useBookWorkspace() {
     exportBookBackup,
     exportCurrentBookBackup,
     exportLibraryBackup,
+    exportSettingsBackup,
     importBackupFile,
+    importSettingsBackupFile,
     removeBook,
     refreshLibrary,
     clearHighlights,

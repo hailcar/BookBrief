@@ -1,10 +1,32 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildSettingsBackupFilePayload,
   buildMarkdownReadingNotes,
   buildLibraryBackupPayload,
   parseBackupPayload,
+  parseSettingsBackupPayload,
+  settingsBackupFileName,
+  writeSettingsFromBackup,
 } from "@/lib/export";
+import { saveEpubDisplayMode } from "@/lib/epub-display";
+import {
+  DEFAULT_READER_SETTINGS,
+  loadReaderSettings,
+  saveReaderSettings,
+} from "@/lib/reader-settings";
+import { loadAiSettings, saveAiSettings } from "@/lib/settings";
 import type { StoredBook } from "@/lib/types";
+
+afterEach(() => {
+  saveAiSettings({
+    apiKey: "",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+  });
+  saveReaderSettings(DEFAULT_READER_SETTINGS);
+  saveEpubDisplayMode("global");
+  vi.unstubAllGlobals();
+});
 
 describe("library backup export", () => {
   it("round-trips a book backup with document bytes and summaries", async () => {
@@ -39,6 +61,7 @@ describe("library backup export", () => {
 
     expect(payload.version).toBe(2);
     expect(payload.scope).toBe("book");
+    expect(payload).not.toHaveProperty("settings");
     expect(payload.books[0].document?.dataBase64).toBeTruthy();
     expect(parsed.books[0]).toMatchObject({
       id: "book-1",
@@ -50,6 +73,102 @@ describe("library backup export", () => {
       comments: book.comments,
     });
     await expect(parsed.books[0].blob?.text()).resolves.toBe("epub bytes");
+  });
+
+  it("exports and restores settings separately without importing an API key", () => {
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => undefined,
+      },
+    });
+    saveAiSettings({
+      apiKey: "local-secret-key",
+      baseUrl: "https://old.example/v1",
+      model: "old-model",
+    });
+    saveReaderSettings({
+      fontSize: "large",
+      fontFamily: "system",
+      contentWidth: "full",
+      imageMode: "full-width",
+    });
+    saveEpubDisplayMode("publisher");
+
+    const backup = buildSettingsBackupFilePayload();
+    expect(settingsBackupFileName()).toBe("summary-epub-settings-backup.json");
+    expect(backup).toMatchObject({
+      version: 1,
+      type: "summary_epub_settings",
+      settings: {
+        ai: {
+          baseUrl: "https://old.example/v1",
+          model: "old-model",
+        },
+        reader: {
+          fontSize: "large",
+          fontFamily: "system",
+          contentWidth: "full",
+          imageMode: "full-width",
+        },
+        epubDisplayMode: "publisher",
+      },
+    });
+    expect(JSON.stringify(backup)).not.toContain("apiKey");
+
+    const parsed = parseSettingsBackupPayload({
+      ...backup,
+      settings: {
+        ...backup.settings,
+        ai: {
+          apiKey: "must-not-import",
+          baseUrl: "https://new.example/v1",
+          model: "new-model",
+          summarySystemPrompt: "new system",
+        },
+      },
+    });
+
+    expect(parsed?.ai).toEqual({
+      baseUrl: "https://new.example/v1",
+      model: "new-model",
+      summarySystemPrompt: "new system",
+    });
+    expect(writeSettingsFromBackup(parsed)).toBe(true);
+    expect(loadAiSettings()).toMatchObject({
+      apiKey: "local-secret-key",
+      baseUrl: "https://new.example/v1",
+      model: "new-model",
+      summarySystemPrompt: "new system",
+    });
+    expect(loadReaderSettings()).toEqual({
+      fontSize: "large",
+      fontFamily: "system",
+      contentWidth: "full",
+      imageMode: "full-width",
+    });
+  });
+
+  it("lets settings import read the deprecated settings field from old book backups", () => {
+    const parsed = parseSettingsBackupPayload({
+      version: 2,
+      exportedAt: 1000,
+      scope: "library",
+      settings: {
+        ai: {
+          baseUrl: "https://new.example/v1",
+          model: "new-model",
+        },
+      },
+      books: [],
+    });
+
+    expect(parsed).toEqual({
+      ai: {
+        baseUrl: "https://new.example/v1",
+        model: "new-model",
+      },
+    });
   });
 
   it("loads legacy summary-only exports as a single parsed book", () => {

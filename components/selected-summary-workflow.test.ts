@@ -142,19 +142,28 @@ describe("selected paragraph summary workflow", () => {
     const hook = source("hooks/use-book-workspace.ts");
     const exportHelpers = source("lib/export.ts");
 
-    expect(settings).toContain('<TabsTrigger value="data"');
+    expect(settings).toContain('value="data"');
     expect(settings).toContain("导出当前书");
     expect(settings).toContain("导出全部书库");
     expect(settings).toContain("按书籍导出");
-    expect(settings).toContain("加载备份 JSON");
+    expect(settings).toContain("加载书籍备份 JSON");
+    expect(settings).toContain("导出配置");
+    expect(settings).toContain("加载配置备份 JSON");
     expect(settings).toContain("library.map((item)");
     expect(workspace).toContain("onExportBook={ws.exportBookBackup}");
     expect(workspace).toContain("onImportBackup={ws.importBackupFile}");
+    expect(workspace).toContain("onExportSettings={ws.exportSettingsBackup}");
+    expect(workspace).toContain(
+      "onImportSettingsBackup={ws.importSettingsBackupFile}",
+    );
     expect(hook).toContain("const exportBookBackup");
     expect(hook).toContain("const exportLibraryBackup");
     expect(hook).toContain("const importBackupFile");
+    expect(hook).toContain("const exportSettingsBackup");
+    expect(hook).toContain("const importSettingsBackupFile");
     expect(exportHelpers).toContain("version: 2");
     expect(exportHelpers).toContain("dataBase64");
+    expect(exportHelpers).toContain("summary_epub_settings");
   });
 
   it("persists the reader section offset for refresh restore", () => {

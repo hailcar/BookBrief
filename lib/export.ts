@@ -3,8 +3,21 @@ import {
   documentFormatFromFileName,
   documentFormatForBook,
 } from "@/lib/documents";
+import {
+  loadEpubDisplayMode,
+  saveEpubDisplayMode,
+} from "@/lib/epub-display";
+import {
+  DEFAULT_READER_SETTINGS,
+  loadReaderSettings,
+  saveReaderSettings,
+  type ReaderSettings,
+} from "@/lib/reader-settings";
+import { loadAiSettings, saveAiSettings } from "@/lib/settings";
 import type {
+  BackupAiSettings,
   BackupBookPayload,
+  BackupSettingsPayload,
   EpubComment,
   ExportPayload,
   LibraryBackupPayload,
@@ -12,10 +25,20 @@ import type {
   ParsedBackupPayload,
   ReadingBookmark,
   SectionSummary,
+  SettingsBackupPayload,
   StoredBook,
 } from "@/lib/types";
 
 const READER_STATE_PREFIX = "summary_epub_reader_state:";
+
+const AI_BACKUP_FIELDS = [
+  "baseUrl",
+  "model",
+  "summarySystemPrompt",
+  "summaryUserTemplate",
+  "headingSummarySystemPrompt",
+  "headingSummaryUserTemplate",
+] as const satisfies readonly (keyof BackupAiSettings)[];
 
 export function buildExportPayload(book: StoredBook): ExportPayload {
   return {
@@ -29,6 +52,31 @@ export function buildExportPayload(book: StoredBook): ExportPayload {
       summaries: Object.values(book.summaries),
       comments: Object.values(book.comments ?? {}),
     },
+  };
+}
+
+export function buildSettingsBackupPayload(): BackupSettingsPayload {
+  const ai = loadAiSettings();
+  return {
+    ai: {
+      baseUrl: ai.baseUrl,
+      model: ai.model,
+      summarySystemPrompt: ai.summarySystemPrompt,
+      summaryUserTemplate: ai.summaryUserTemplate,
+      headingSummarySystemPrompt: ai.headingSummarySystemPrompt,
+      headingSummaryUserTemplate: ai.headingSummaryUserTemplate,
+    },
+    reader: loadReaderSettings(),
+    epubDisplayMode: loadEpubDisplayMode(),
+  };
+}
+
+export function buildSettingsBackupFilePayload(): SettingsBackupPayload {
+  return {
+    version: 1,
+    type: "summary_epub_settings",
+    exportedAt: Date.now(),
+    settings: buildSettingsBackupPayload(),
   };
 }
 
@@ -65,6 +113,10 @@ export function backupFileNameForBook(book: Pick<StoredBook, "fileName">): strin
 
 export function backupFileNameForLibrary(): string {
   return "summary-epub-library-backup.json";
+}
+
+export function settingsBackupFileName(): string {
+  return "summary-epub-settings-backup.json";
 }
 
 export function markdownFileNameForBook(book: Pick<StoredBook, "fileName">): string {
@@ -305,6 +357,121 @@ export async function buildLibraryBackupPayload(
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object";
+}
+
+function normalizeBackupAiSettings(value: unknown): BackupAiSettings | undefined {
+  if (!isObject(value)) return undefined;
+  const ai: BackupAiSettings = {};
+  for (const field of AI_BACKUP_FIELDS) {
+    if (typeof value[field] === "string") {
+      ai[field] = value[field];
+    }
+  }
+  return Object.keys(ai).length > 0 ? ai : undefined;
+}
+
+function isReaderFontSize(value: unknown): value is ReaderSettings["fontSize"] {
+  return value === "small" || value === "default" || value === "large";
+}
+
+function isReaderFontFamily(
+  value: unknown,
+): value is ReaderSettings["fontFamily"] {
+  return value === "book" || value === "serif" || value === "system";
+}
+
+function isReaderContentWidth(
+  value: unknown,
+): value is ReaderSettings["contentWidth"] {
+  return (
+    value === "narrow" ||
+    value === "standard" ||
+    value === "wide" ||
+    value === "full"
+  );
+}
+
+function isReaderImageMode(value: unknown): value is ReaderSettings["imageMode"] {
+  return value === "contain" || value === "original" || value === "full-width";
+}
+
+function normalizeBackupReaderSettings(
+  value: unknown,
+): ReaderSettings | undefined {
+  if (!isObject(value)) return undefined;
+  const current = loadReaderSettings();
+  const reader: ReaderSettings = {
+    fontSize: isReaderFontSize(value.fontSize)
+      ? value.fontSize
+      : current.fontSize,
+    fontFamily: isReaderFontFamily(value.fontFamily)
+      ? value.fontFamily
+      : current.fontFamily,
+    contentWidth: isReaderContentWidth(value.contentWidth)
+      ? value.contentWidth
+      : current.contentWidth,
+    imageMode: isReaderImageMode(value.imageMode)
+      ? value.imageMode
+      : current.imageMode,
+  };
+  return reader;
+}
+
+function normalizeBackupSettings(value: unknown): BackupSettingsPayload | undefined {
+  if (!isObject(value)) return undefined;
+  const ai = normalizeBackupAiSettings(value.ai);
+  const reader = normalizeBackupReaderSettings(value.reader);
+  const epubDisplayMode =
+    value.epubDisplayMode === "global" || value.epubDisplayMode === "publisher"
+      ? value.epubDisplayMode
+      : undefined;
+  if (!ai && !reader && !epubDisplayMode) return undefined;
+  return {
+    ...(ai ? { ai } : {}),
+    ...(reader ? { reader } : {}),
+    ...(epubDisplayMode ? { epubDisplayMode } : {}),
+  };
+}
+
+export function writeSettingsFromBackup(
+  settings: BackupSettingsPayload | undefined,
+): boolean {
+  if (!settings) return false;
+  let wrote = false;
+  if (settings.ai) {
+    const current = loadAiSettings();
+    saveAiSettings({
+      ...current,
+      ...settings.ai,
+      apiKey: current.apiKey,
+    });
+    wrote = true;
+  }
+  if (settings.reader) {
+    saveReaderSettings({
+      ...DEFAULT_READER_SETTINGS,
+      ...loadReaderSettings(),
+      ...settings.reader,
+    });
+    wrote = true;
+  }
+  if (settings.epubDisplayMode) {
+    saveEpubDisplayMode(settings.epubDisplayMode);
+    wrote = true;
+  }
+  return wrote;
+}
+
+export function parseSettingsBackupPayload(
+  payload: unknown,
+): BackupSettingsPayload | undefined {
+  if (!isObject(payload)) return undefined;
+  if (payload.type === "summary_epub_settings") {
+    return normalizeBackupSettings(payload.settings);
+  }
+  return normalizeBackupSettings(
+    isObject(payload.settings) ? payload.settings : payload,
+  );
 }
 
 function parseVersion2Backup(payload: Record<string, unknown>): ParsedBackupPayload {

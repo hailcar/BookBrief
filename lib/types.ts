@@ -1,3 +1,6 @@
+import type { EpubDisplayMode } from "@/lib/epub-display";
+import type { ReaderSettings } from "@/lib/reader-settings";
+
 export type SectionId = string;
 
 export type DocumentFormat = "epub" | "pdf";
@@ -219,6 +222,28 @@ export type ExportPayload = {
     summaries: SectionSummary[];
     comments?: EpubComment[];
   };
+};
+
+export type BackupAiSettings = {
+  baseUrl?: string;
+  model?: string;
+  summarySystemPrompt?: string;
+  summaryUserTemplate?: string;
+  headingSummarySystemPrompt?: string;
+  headingSummaryUserTemplate?: string;
+};
+
+export type BackupSettingsPayload = {
+  ai?: BackupAiSettings;
+  reader?: ReaderSettings;
+  epubDisplayMode?: EpubDisplayMode;
+};
+
+export type SettingsBackupPayload = {
+  version: 1;
+  type: "summary_epub_settings";
+  exportedAt: number;
+  settings: BackupSettingsPayload;
 };
 
 export type BackupDocumentPayload = {
