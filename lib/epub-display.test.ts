@@ -57,7 +57,7 @@ describe("applyEpubDisplayMode", () => {
     expect(globalCss).toMatch(/max-width:\s*100%\s*!important/);
   });
 
-  it("removes active EPUB content before injecting reader scripts", () => {
+  it("removes active EPUB content before adding the reader shell", () => {
     const html = applyEpubDisplayMode(
       `<html>
         <head>
@@ -90,7 +90,9 @@ describe("applyEpubDisplayMode", () => {
     expect(html).not.toMatch(/\shref=["']data:/i);
     expect(html).toContain('src="cover.png"');
     expect(html).toContain('href="https://example.com/ok"');
-    expect(html).toContain('id="summary-epub-stage-script"');
-    expect(html).toContain('id="summary-epub-heading-script"');
+    expect(html).toContain('id="summary-epub-shell"');
+    expect(html).toContain('id="summary-epub-heading-ui"');
+    expect(html).not.toContain('id="summary-epub-stage-script"');
+    expect(html).not.toContain('id="summary-epub-heading-script"');
   });
 });

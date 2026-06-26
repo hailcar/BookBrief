@@ -14,22 +14,35 @@ describe("selected paragraph summary workflow", () => {
     expect(iframeScript).toContain("ctrlKey: !!ev.ctrlKey");
     expect(iframeScript).toContain("metaKey: !!ev.metaKey");
     expect(iframeScript).not.toContain("shiftKey: !!ev.shiftKey");
-    expect(preview).toContain("ctrlKey: data.ctrlKey");
-    expect(preview).toContain("metaKey: data.metaKey");
+    expect(preview).toContain("ctrlKey: data.ctrlKey === true");
+    expect(preview).toContain("metaKey: data.metaKey === true");
     expect(preview).not.toContain("shiftKey: data.shiftKey");
   });
 
-  it("accepts reader postMessage events only from the active EPUB iframe", () => {
+  it("accepts reader bridge events only from the active EPUB iframe", () => {
     const preview = source("components/epub-section-preview.tsx");
-    const listenerStart = preview.indexOf("const onMessage = (ev: MessageEvent)");
-    const listenerEnd = preview.indexOf("window.addEventListener(\"message\", onMessage)");
-    const listenerBody = preview.slice(listenerStart, listenerEnd);
+    const bridgeStart = preview.indexOf("const installFrameInteraction = useCallback");
+    const bridgeEnd = preview.indexOf("interactionBridgesRef.current.set", bridgeStart);
+    const bridgeBody = preview.slice(bridgeStart, bridgeEnd);
 
-    expect(listenerBody).toContain(
-      "if (ev.source !== iframeForSlot(activeSlot)?.contentWindow) return;",
+    expect(bridgeBody).toContain(
+      "if (iframeForSlot(activeSlotRef.current) !== iframe) return;",
     );
-    expect(listenerBody.indexOf("ev.source")).toBeLessThan(
-      listenerBody.indexOf("const data = ev.data"),
+    expect(preview).toContain("installHeadingInteractionRuntime(win, doc, bridge)");
+    expect(preview).not.toContain("window.addEventListener(\"message\", onMessage)");
+  });
+
+  it("keeps EPUB iframe scripts disabled while retaining same-origin DOM access", () => {
+    const preview = source("components/epub-section-preview.tsx");
+    const sandboxLine =
+      preview.match(/sandbox="[^"]*"/)?.[0] ?? "";
+
+    expect(sandboxLine).toBe('sandbox="allow-same-origin"');
+    expect(sandboxLine).not.toContain("allow-scripts");
+    expect(preview).toContain("installHeadingInteractionRuntime");
+    expect(preview).toContain("interactionBridgesRef");
+    expect(preview).not.toContain(
+      "sandbox=\"allow-same-origin allow-scripts\"",
     );
   });
 
@@ -87,6 +100,10 @@ describe("selected paragraph summary workflow", () => {
     expect(source("hooks/use-heading-summary-queue.ts")).toContain(
       "useHeadingSummaryQueue",
     );
+    expect(source("hooks/use-active-book-state.ts")).toContain(
+      "useActiveBookState",
+    );
+    expect(workspaceHook).toContain("useActiveBookState()");
     expect(workspaceHook).toContain("useBookLibraryState()");
     expect(workspaceHook).toContain("useReaderSectionState()");
     expect(workspaceHook).toContain("useHeadingSummaryQueue()");

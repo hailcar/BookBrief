@@ -3,6 +3,7 @@
  * Section = one OPF spine item (chapterId = section.id).
  */
 import type { EpubBlock, EpubHeading } from "@/lib/types";
+import { sanitizeEpubDocument, sanitizeEpubHtml } from "@/lib/epub/sanitize";
 
 const HEADING_TAGS = new Set(["H1", "H2", "H3", "H4", "H5", "H6"]);
 
@@ -124,11 +125,12 @@ export function extractBlocksFromHtml(
   blockIdPrefix = options.blockIdPrefix ?? "";
   if (typeof DOMParser === "undefined") {
     blockIdPrefix = "";
-    return { blocks: [], annotatedHtml: html };
+    return { blocks: [], annotatedHtml: sanitizeEpubHtml(html) };
   }
 
   const doc = new DOMParser().parseFromString(html, "text/html");
-  doc.querySelectorAll("script, style, nav").forEach((el) => el.remove());
+  sanitizeEpubDocument(doc);
+  doc.querySelectorAll("style, nav").forEach((el) => el.remove());
 
   const body = doc.body;
   if (!body) {

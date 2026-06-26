@@ -1,3 +1,5 @@
+import { sanitizeEpubHtml } from "@/lib/epub/sanitize";
+
 type ReaderWindowSection = {
   html?: string;
   sectionId?: string;
@@ -95,7 +97,8 @@ function renderSection({
   interactive,
 }: ReaderWindowSection): string {
   if (!sectionId) return "";
-  const body = html ? tagInnerHtml(html, "body") : "";
+  const safeHtml = html ? sanitizeEpubHtml(html) : "";
+  const body = safeHtml ? tagInnerHtml(safeHtml, "body") : "";
   const content = interactive ? body : stripReaderDataAttrs(body);
   const roleClass =
     role === "current"
@@ -117,7 +120,7 @@ export function buildReaderWindowHtml({
   nextSectionId,
   nextTitle = "下一页",
 }: ReaderWindowOptions): string {
-  const currentHead = tagInnerHtml(currentHtml, "head");
+  const currentHead = tagInnerHtml(sanitizeEpubHtml(currentHtml), "head");
   const sections = [
     renderSection({
       html: prevHtml,
@@ -159,7 +162,7 @@ export function buildReaderDocumentHtml({
   currentSectionId,
 }: ReaderDocumentOptions): string {
   const first = sections[0];
-  const currentHead = first ? tagInnerHtml(first.html, "head") : "";
+  const currentHead = first ? tagInnerHtml(sanitizeEpubHtml(first.html), "head") : "";
   const rendered = sections
     .map((section) =>
       renderSection({

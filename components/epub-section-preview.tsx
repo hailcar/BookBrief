@@ -7,6 +7,11 @@ import {
   type EpubDisplayMode,
   type EpubReaderLayout,
 } from "@/lib/epub-display";
+import {
+  installHeadingInteractionRuntime,
+  type HeadingInteractionBridge,
+  type HeadingInteractionMessage,
+} from "@/lib/epub/heading-interaction";
 import type { ReaderSettings } from "@/lib/reader-settings";
 import type {
   EpubComment,
@@ -69,22 +74,32 @@ const FRAME_FADE_MS = 180;
 const READER_WINDOW_RESTORE_GUARD_MS = 1400;
 const READER_WINDOW_RESTORE_OFFSET_TOLERANCE = 180;
 
-function relayoutIframeDocument(iframe: HTMLIFrameElement | null): void {
+function relayoutIframeDocument(
+  iframe: HTMLIFrameElement | null,
+  publisherScale: boolean,
+): void {
   if (!iframe) return;
   try {
-    iframe.contentWindow?.dispatchEvent(new Event("resize"));
-  } catch {
-    /* sandbox */
-  }
-}
-
-function postToIframe(
-  iframe: HTMLIFrameElement | null,
-  payload: Record<string, unknown>,
-): void {
-  if (!iframe?.contentWindow) return;
-  try {
-    iframe.contentWindow.postMessage(payload, "*");
+    const win = iframe.contentWindow;
+    const doc = win?.document;
+    const root = doc?.getElementById("summary-epub-root");
+    if (root) {
+      root.style.transform = "";
+      root.style.width = "";
+      root.style.marginBottom = "";
+      if (publisherScale && win) {
+        const docWidth = root.scrollWidth;
+        const viewWidth = win.innerWidth || docWidth;
+        if (docWidth > viewWidth + 4) {
+          const scale = Math.max(0.35, Math.min(1, viewWidth / docWidth));
+          root.style.transform = `scale(${scale})`;
+          root.style.width = `${docWidth}px`;
+          const rect = root.getBoundingClientRect();
+          root.style.marginBottom = `${rect.height * (scale - 1)}px`;
+        }
+      }
+    }
+    win?.dispatchEvent(new Event("resize"));
   } catch {
     /* sandbox */
   }
@@ -168,6 +183,8 @@ export function EpubSectionPreview({
 }: Props) {
   const firstIframeRef = useRef<HTMLIFrameElement>(null);
   const secondIframeRef = useRef<HTMLIFrameElement>(null);
+  const activeSlotRef = useRef<FrameSlot>(0);
+  const interactionBridgesRef = useRef(new WeakMap<HTMLIFrameElement, HeadingInteractionBridge>());
   const pendingScrollRequestRef = useRef<ScrollTopRequest | null>(null);
   const readerWindowRestoreGuardRef =
     useRef<ReaderWindowRestoreGuard | null>(null);
@@ -219,6 +236,10 @@ export function EpubSectionPreview({
     srcDoc,
     null,
   ]);
+
+  useEffect(() => {
+    activeSlotRef.current = activeSlot;
+  }, [activeSlot]);
 
   const iframeForSlot = useCallback((slot: FrameSlot) => {
     return slot === 0 ? firstIframeRef.current : secondIframeRef.current;
@@ -293,6 +314,17 @@ export function EpubSectionPreview({
     [activeSlot],
   );
 
+  const sendToFrame = useCallback(
+    (
+      iframe: HTMLIFrameElement | null,
+      payload: HeadingInteractionMessage,
+    ) => {
+      if (!iframe) return;
+      interactionBridgesRef.current.get(iframe)?.receive?.({ data: payload });
+    },
+    [],
+  );
+
   const hydrateFrame = useCallback(
     (slot: FrameSlot, request: ScrollTopRequest | null | undefined) => {
       const el = iframeForSlot(slot);
@@ -301,32 +333,32 @@ export function EpubSectionPreview({
       scrollIframeToRequest(el, request);
       requestAnimationFrame(() => scrollIframeToRequest(el, request));
       window.setTimeout(() => scrollIframeToRequest(el, request), 80);
-      relayoutIframeDocument(el);
+      relayoutIframeDocument(el, displayMode === "publisher");
       if (stableHighlightIds.length) {
-        postToIframe(el, {
+        sendToFrame(el, {
           type: "summary-epub-highlight-blocks",
           blockIds: stableHighlightIds,
           activeBlockId,
         });
       }
-      postToIframe(el, {
+      sendToFrame(el, {
         type: "summary-epub-mark-summarized-blocks",
         blockIds: summarizedBlockIds ?? [],
       });
-      postToIframe(el, {
+      sendToFrame(el, {
         type: "summary-epub-mark-selected-blocks",
         blockIds: selectedBlockIds ?? [],
       });
-      postToIframe(el, {
+      sendToFrame(el, {
         type: "summary-epub-render-inline-bubbles",
         bubbles: inlineSummaryBubbles ?? [],
         activeSummaryId,
       });
-      postToIframe(el, {
+      sendToFrame(el, {
         type: "summary-epub-render-selection-action",
         action: inlineSummaryAction ?? null,
       });
-      postToIframe(el, {
+      sendToFrame(el, {
         type: "summary-epub-render-comments",
         comments: comments ?? [],
       });
@@ -335,133 +367,112 @@ export function EpubSectionPreview({
       activeBlockId,
       activeSummaryId,
       armReaderWindowRestoreGuard,
+      displayMode,
       iframeForSlot,
       inlineSummaryAction,
       inlineSummaryBubbles,
       comments,
+      sendToFrame,
       selectedBlockIds,
       stableHighlightIds,
       summarizedBlockIds,
     ],
   );
 
-  useEffect(() => {
-    const onMessage = (ev: MessageEvent) => {
-      if (ev.source !== iframeForSlot(activeSlot)?.contentWindow) return;
-      const data = ev.data as {
-        type?: string;
-        blockId?: string;
-        summaryId?: string;
-        sectionId?: string;
-        offset?: number;
-        ctrlKey?: boolean;
-        metaKey?: boolean;
-        text?: string;
-        blockIds?: string[];
-        fragments?: unknown[];
-        annotationId?: string;
-    };
-      if (
-        data?.type === "summary-epub-summarize-heading" &&
-        typeof data.blockId === "string"
-      ) {
-        onSummarizeHeadingStable(data.blockId);
+  const handleReaderMessage = useCallback((data: HeadingInteractionMessage) => {
+    if (
+      data?.type === "summary-epub-summarize-heading" &&
+      typeof data.blockId === "string"
+    ) {
+      onSummarizeHeadingStable(data.blockId);
+      return;
+    }
+    if (
+      data?.type === "summary-epub-heading-visible" &&
+      typeof data.blockId === "string"
+    ) {
+      onHeadingVisibleStable(data.blockId);
+      return;
+    }
+    if (
+      data?.type === "summary-epub-reader-block-click" &&
+      typeof data.blockId === "string"
+    ) {
+      onReaderBlockClickStable(data.blockId, {
+        ctrlKey: data.ctrlKey === true,
+        metaKey: data.metaKey === true,
+      });
+      return;
+    }
+    if (data?.type === "summary-epub-summarize-selection") {
+      onSummarizeSelection?.();
+      return;
+    }
+    if (data?.type === "summary-epub-clear-reader-selection") {
+      onClearSelectionStable();
+      return;
+    }
+    if (
+      (data?.type === "summary-epub-comment-text-selection" ||
+        data?.type === "summary-epub-translate-text-selection") &&
+      typeof data.text === "string" &&
+      Array.isArray(data.blockIds)
+    ) {
+      const selection = {
+        text: data.text,
+        blockIds: data.blockIds.filter(
+          (blockId): blockId is string => typeof blockId === "string",
+        ),
+        fragments: Array.isArray(data.fragments)
+          ? data.fragments.filter(
+              (
+                fragment: unknown,
+              ): fragment is { blockId: string; text: string } =>
+                typeof fragment === "object" &&
+                fragment !== null &&
+                "blockId" in fragment &&
+                "text" in fragment &&
+                typeof fragment.blockId === "string" &&
+                typeof fragment.text === "string",
+            )
+          : undefined,
+      };
+      if (data.type === "summary-epub-translate-text-selection") {
+        onTranslateTextSelection?.(selection);
+      } else {
+        onCommentTextSelection?.(selection);
+      }
+      return;
+    }
+    if (
+      data?.type === "summary-epub-delete-annotation" &&
+      typeof data.annotationId === "string"
+    ) {
+      onDeleteAnnotation?.(data.annotationId);
+      return;
+    }
+    if (
+      data?.type === "summary-epub-activate-summary" &&
+      typeof data.summaryId === "string"
+    ) {
+      onActivateSummary?.(data.summaryId);
+      return;
+    }
+    if (data?.type === "summary-epub-delete-active-summary") {
+      onDeleteActiveSummary?.();
+      return;
+    }
+    if (
+      data?.type === "summary-epub-reader-window-active-section" &&
+      typeof data.sectionId === "string"
+    ) {
+      const offset = typeof data.offset === "number" ? data.offset : 0;
+      if (shouldIgnoreReaderWindowSectionChange(data.sectionId, offset)) {
         return;
       }
-      if (
-        data?.type === "summary-epub-heading-visible" &&
-        typeof data.blockId === "string"
-      ) {
-        onHeadingVisibleStable(data.blockId);
-        return;
-      }
-      if (
-        data?.type === "summary-epub-reader-block-click" &&
-        typeof data.blockId === "string"
-      ) {
-        onReaderBlockClickStable(data.blockId, {
-          ctrlKey: data.ctrlKey,
-          metaKey: data.metaKey,
-        });
-        return;
-      }
-      if (data?.type === "summary-epub-summarize-selection") {
-        onSummarizeSelection?.();
-        return;
-      }
-      if (data?.type === "summary-epub-clear-reader-selection") {
-        onClearSelectionStable();
-        return;
-      }
-      if (
-        (data?.type === "summary-epub-comment-text-selection" ||
-          data?.type === "summary-epub-translate-text-selection") &&
-        typeof data.text === "string" &&
-        Array.isArray(data.blockIds)
-      ) {
-        const selection = {
-          text: data.text,
-          blockIds: data.blockIds.filter(
-            (blockId): blockId is string => typeof blockId === "string",
-          ),
-          fragments: Array.isArray(data.fragments)
-            ? data.fragments.filter(
-                (
-                  fragment: unknown,
-                ): fragment is { blockId: string; text: string } =>
-                  typeof fragment === "object" &&
-                  fragment !== null &&
-                  "blockId" in fragment &&
-                  "text" in fragment &&
-                  typeof fragment.blockId === "string" &&
-                  typeof fragment.text === "string",
-              )
-            : undefined,
-        };
-        if (data.type === "summary-epub-translate-text-selection") {
-          onTranslateTextSelection?.(selection);
-        } else {
-          onCommentTextSelection?.(selection);
-        }
-        return;
-      }
-      if (
-        data?.type === "summary-epub-delete-annotation" &&
-        typeof data.annotationId === "string"
-      ) {
-        onDeleteAnnotation?.(data.annotationId);
-        return;
-      }
-      if (
-        data?.type === "summary-epub-activate-summary" &&
-        typeof data.summaryId === "string"
-      ) {
-        onActivateSummary?.(data.summaryId);
-        return;
-      }
-      if (data?.type === "summary-epub-delete-active-summary") {
-        onDeleteActiveSummary?.();
-        return;
-      }
-      if (
-        data?.type === "summary-epub-reader-window-active-section" &&
-        typeof data.sectionId === "string"
-      ) {
-        const offset = typeof data.offset === "number" ? data.offset : 0;
-        if (shouldIgnoreReaderWindowSectionChange(data.sectionId, offset)) {
-          return;
-        }
-        onReaderWindowSectionChange?.(
-          data.sectionId,
-          offset,
-        );
-      }
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+      onReaderWindowSectionChange?.(data.sectionId, offset);
+    }
   }, [
-    activeSlot,
-    iframeForSlot,
     onHeadingVisibleStable,
     onActivateSummary,
     onDeleteActiveSummary,
@@ -475,6 +486,25 @@ export function EpubSectionPreview({
     onReaderWindowSectionChange,
     shouldIgnoreReaderWindowSectionChange,
   ]);
+
+  const installFrameInteraction = useCallback(
+    (slot: FrameSlot) => {
+      const iframe = iframeForSlot(slot);
+      const win = iframe?.contentWindow;
+      const doc = win?.document;
+      if (!iframe || !win || !doc) return;
+
+      const bridge: HeadingInteractionBridge = {
+        postToParent: (payload) => {
+          if (iframeForSlot(activeSlotRef.current) !== iframe) return;
+          handleReaderMessage(payload);
+        },
+      };
+      interactionBridgesRef.current.set(iframe, bridge);
+      installHeadingInteractionRuntime(win, doc, bridge);
+    },
+    [handleReaderMessage, iframeForSlot],
+  );
 
   useEffect(() => {
     if (srcDoc === frameDocs[activeSlot]) return;
@@ -518,6 +548,7 @@ export function EpubSectionPreview({
           : slot === activeSlot
             ? scrollTopRequest
             : null;
+      installFrameInteraction(slot);
       hydrateFrame(slot, requestedTop);
       if (slot === loadingSlot && frameDocs[slot] === srcDoc) {
         requestAnimationFrame(() => {
@@ -530,6 +561,7 @@ export function EpubSectionPreview({
       activateSlot,
       frameDocs,
       hydrateFrame,
+      installFrameInteraction,
       loadingSlot,
       scrollTopRequest,
       srcDoc,
@@ -552,68 +584,80 @@ export function EpubSectionPreview({
   }, [activeSlot, armReaderWindowRestoreGuard, iframeForSlot, scrollTopRequest]);
 
   useEffect(() => {
-    postToIframe(iframeForSlot(activeSlot), {
+    sendToFrame(iframeForSlot(activeSlot), {
       type: stableHighlightIds.length
         ? "summary-epub-highlight-blocks"
         : "summary-epub-clear-highlight",
       blockIds: stableHighlightIds,
       activeBlockId,
     });
-  }, [activeSlot, iframeForSlot, stableHighlightIds, activeBlockId]);
+  }, [activeSlot, iframeForSlot, sendToFrame, stableHighlightIds, activeBlockId]);
 
   useEffect(() => {
-    postToIframe(iframeForSlot(activeSlot), {
+    sendToFrame(iframeForSlot(activeSlot), {
       type: "summary-epub-mark-summarized-blocks",
       blockIds: summarizedBlockIds ?? [],
     });
-  }, [activeSlot, iframeForSlot, summarizedBlockIds]);
+  }, [activeSlot, iframeForSlot, sendToFrame, summarizedBlockIds]);
 
   useEffect(() => {
-    postToIframe(iframeForSlot(activeSlot), {
+    sendToFrame(iframeForSlot(activeSlot), {
       type: "summary-epub-mark-selected-blocks",
       blockIds: selectedBlockIds ?? [],
     });
-  }, [activeSlot, iframeForSlot, selectedBlockIds]);
+  }, [activeSlot, iframeForSlot, sendToFrame, selectedBlockIds]);
 
   useEffect(() => {
     if (!scrollToBlockRequest) return;
-    postToIframe(iframeForSlot(activeSlot), {
+    sendToFrame(iframeForSlot(activeSlot), {
       type: "summary-epub-scroll-to-block",
       blockId: scrollToBlockRequest.blockId,
     });
-  }, [activeSlot, iframeForSlot, scrollToBlockRequest]);
+  }, [activeSlot, iframeForSlot, sendToFrame, scrollToBlockRequest]);
 
   useEffect(() => {
-    postToIframe(iframeForSlot(activeSlot), {
+    sendToFrame(iframeForSlot(activeSlot), {
       type: "summary-epub-render-inline-bubbles",
       bubbles: inlineSummaryBubbles ?? [],
       activeSummaryId,
     });
-  }, [activeSlot, iframeForSlot, inlineSummaryBubbles, activeSummaryId]);
+  }, [activeSlot, iframeForSlot, sendToFrame, inlineSummaryBubbles, activeSummaryId]);
 
   useEffect(() => {
-    postToIframe(iframeForSlot(activeSlot), {
+    sendToFrame(iframeForSlot(activeSlot), {
       type: "summary-epub-render-selection-action",
       action: inlineSummaryAction ?? null,
     });
-  }, [activeSlot, iframeForSlot, inlineSummaryAction]);
+  }, [activeSlot, iframeForSlot, sendToFrame, inlineSummaryAction]);
 
   useEffect(() => {
-    postToIframe(iframeForSlot(activeSlot), {
+    sendToFrame(iframeForSlot(activeSlot), {
       type: "summary-epub-render-comments",
       comments: comments ?? [],
     });
-  }, [activeSlot, iframeForSlot, comments]);
+  }, [activeSlot, iframeForSlot, sendToFrame, comments]);
 
   useEffect(() => {
     if (layout !== "fullscreen") return;
     const el = iframeForSlot(activeSlot);
-    relayoutIframeDocument(el);
+    relayoutIframeDocument(el, displayMode === "publisher");
     dispatchReaderViewportRelayout();
-    const raf = requestAnimationFrame(() => relayoutIframeDocument(el));
-    const t1 = window.setTimeout(() => relayoutIframeDocument(el), 120);
-    const t2 = window.setTimeout(() => relayoutIframeDocument(el), 400);
-    const onResize = () => relayoutIframeDocument(iframeForSlot(activeSlot));
+    const raf = requestAnimationFrame(() =>
+      relayoutIframeDocument(el, displayMode === "publisher"),
+    );
+    const t1 = window.setTimeout(
+      () => relayoutIframeDocument(el, displayMode === "publisher"),
+      120,
+    );
+    const t2 = window.setTimeout(
+      () => relayoutIframeDocument(el, displayMode === "publisher"),
+      400,
+    );
+    const onResize = () =>
+      relayoutIframeDocument(
+        iframeForSlot(activeSlot),
+        displayMode === "publisher",
+      );
     window.addEventListener("resize", onResize);
     return () => {
       cancelAnimationFrame(raf);
@@ -621,7 +665,7 @@ export function EpubSectionPreview({
       window.clearTimeout(t2);
       window.removeEventListener("resize", onResize);
     };
-  }, [activeSlot, iframeForSlot, layout, sectionId, srcDoc]);
+  }, [activeSlot, displayMode, iframeForSlot, layout, sectionId, srcDoc]);
 
   const wrapClass =
     layout === "fullscreen"
@@ -652,7 +696,7 @@ export function EpubSectionPreview({
               ? "pointer-events-none z-10 opacity-100"
               : "pointer-events-none z-0 opacity-0"
         } ${frameClass}`}
-        sandbox="allow-same-origin allow-scripts"
+        sandbox="allow-same-origin"
         srcDoc={doc}
         onLoad={() => onFrameLoad(slot)}
       />

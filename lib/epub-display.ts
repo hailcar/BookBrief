@@ -1,7 +1,7 @@
 import {
-  HEADING_INTERACTION_SCRIPT,
   HEADING_INTERACTION_STYLE,
 } from "@/lib/epub/heading-interaction";
+import { sanitizeEpubDocument, sanitizeEpubHtml } from "@/lib/epub/sanitize";
 import {
   DEFAULT_READER_SETTINGS,
   READER_CONTENT_MAX_PX,
@@ -83,76 +83,6 @@ const SHARED_SHELL = `
   }
 </style>
 `;
-
-const ACTIVE_CONTENT_SELECTOR = "script, iframe, object, embed, base";
-const URL_ATTRIBUTES = new Set([
-  "action",
-  "formaction",
-  "href",
-  "poster",
-  "src",
-  "xlink:href",
-]);
-const NAVIGATION_URL_ATTRIBUTES = new Set([
-  "action",
-  "formaction",
-  "href",
-  "xlink:href",
-]);
-
-function isDangerousUrlAttribute(name: string, value: string): boolean {
-  const compact = value.trim().replace(/[\u0000-\u001f\u007f\s]+/g, "");
-  if (/^(?:javascript|vbscript):/i.test(compact)) return true;
-  return NAVIGATION_URL_ATTRIBUTES.has(name) && /^data:/i.test(compact);
-}
-
-function sanitizeEpubHtmlFallback(html: string): string {
-  return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "")
-    .replace(/<script\b[^>]*\/?>/gi, "")
-    .replace(/<(?:iframe|object|embed)\b[^>]*>[\s\S]*?<\/(?:iframe|object|embed)\s*>/gi, "")
-    .replace(/<(?:iframe|object|embed|base)\b[^>]*\/?>/gi, "")
-    .replace(/<meta\b(?=[^>]*\bhttp-equiv\s*=\s*["']?refresh\b)[^>]*\/?>/gi, "")
-    .replace(/\s+on[a-z][\w:-]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?/gi, "")
-    .replace(/\s+srcdoc\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/gi, "")
-    .replace(
-      /\s+(action|formaction|href|poster|src|xlink:href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi,
-      (match, rawName: string, doubleQuoted?: string, singleQuoted?: string, unquoted?: string) => {
-        const name = rawName.toLowerCase();
-        const value = doubleQuoted ?? singleQuoted ?? unquoted ?? "";
-        return isDangerousUrlAttribute(name, value) ? "" : match;
-      },
-    );
-}
-
-function sanitizeEpubPreviewHtml(html: string): string {
-  if (typeof DOMParser === "undefined") {
-    return sanitizeEpubHtmlFallback(html);
-  }
-
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  doc.querySelectorAll(ACTIVE_CONTENT_SELECTOR).forEach((el) => el.remove());
-  doc.querySelectorAll("meta").forEach((el) => {
-    if (el.getAttribute("http-equiv")?.toLowerCase() === "refresh") {
-      el.remove();
-    }
-  });
-  doc.querySelectorAll("*").forEach((el) => {
-    Array.from(el.attributes).forEach((attr) => {
-      const name = attr.name.toLowerCase();
-      if (
-        name.startsWith("on") ||
-        name === "srcdoc" ||
-        (URL_ATTRIBUTES.has(name) && isDangerousUrlAttribute(name, attr.value)) ||
-        (name === "style" && /(?:javascript\s*:|expression\s*\()/i.test(attr.value))
-      ) {
-        el.removeAttribute(attr.name);
-      }
-    });
-  });
-
-  return doc.documentElement.outerHTML;
-}
 
 function imageCss(mode: ReaderImageMode, layout: EpubReaderLayout): string {
   const maxH =
@@ -296,103 +226,6 @@ function buildPublisherTypo(): string {
 `;
 }
 
-function buildStageScript(enablePublisherScale: boolean): string {
-  const fitFn = enablePublisherScale
-    ? `function fit() {
-    var root = document.getElementById("summary-epub-root");
-    if (!root) return;
-    root.style.transform = "";
-    root.style.width = "";
-    root.style.marginBottom = "";
-    var docW = root.scrollWidth;
-    var viewW = window.innerWidth || docW;
-    if (docW > viewW + 4) {
-      var scale = Math.max(0.35, Math.min(1, viewW / docW));
-      root.style.transform = "scale(" + scale + ")";
-      root.style.width = docW + "px";
-      var rect = root.getBoundingClientRect();
-      root.style.marginBottom = rect.height * (scale - 1) + "px";
-    }
-  }`
-    : `function fit() {
-    var root = document.getElementById("summary-epub-root");
-    if (!root) return;
-    root.style.transform = "";
-    root.style.width = "";
-    root.style.marginBottom = "";
-  }`;
-
-  return `
-<script id="summary-epub-stage-script">
-(function () {
-  function ensureViewport() {
-    var head = document.head;
-    if (!head) return;
-    var vp = document.querySelector('meta[name="viewport"]');
-    if (!vp) {
-      vp = document.createElement("meta");
-      vp.setAttribute("name", "viewport");
-      head.appendChild(vp);
-    }
-    vp.setAttribute("content", "width=device-width, initial-scale=1");
-  }
-  function wrapTables() {
-    var root = document.getElementById("summary-epub-root");
-    if (!root) return;
-    root.querySelectorAll("table").forEach(function (table) {
-      if (table.parentElement && table.parentElement.classList.contains("summary-epub-table-scroll")) return;
-      var wrap = document.createElement("div");
-      wrap.className = "summary-epub-table-scroll";
-      table.parentNode.insertBefore(wrap, table);
-      wrap.appendChild(table);
-    });
-  }
-  function ensureStage() {
-    var body = document.body;
-    if (!body || document.getElementById("summary-epub-stage")) return;
-    var stage = document.createElement("div");
-    stage.id = "summary-epub-stage";
-    var root = document.createElement("div");
-    root.id = "summary-epub-root";
-    while (body.firstChild) {
-      root.appendChild(body.firstChild);
-    }
-    stage.appendChild(root);
-    body.appendChild(stage);
-  }
-  ${fitFn}
-  function scrollTop() {
-    window.scrollTo(0, 0);
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-  }
-  function run() {
-    ensureViewport();
-    ensureStage();
-    wrapTables();
-    fit();
-    scrollTop();
-    requestAnimationFrame(fit);
-    window.setTimeout(fit, 120);
-    window.setTimeout(fit, 400);
-  }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", run);
-  } else {
-    run();
-  }
-  window.addEventListener("resize", fit);
-  if (typeof ResizeObserver !== "undefined") {
-    document.addEventListener("DOMContentLoaded", function () {
-      var r = document.getElementById("summary-epub-root");
-      if (r) new ResizeObserver(fit).observe(r);
-    });
-  }
-})();
-</script>
-`;
-}
-
 function buildInject(
   mode: EpubDisplayMode,
   settings: ReaderSettings,
@@ -402,8 +235,7 @@ function buildInject(
     mode === "global"
       ? buildGlobalTypo(settings, layout)
       : buildPublisherTypo();
-  const scale = mode === "publisher";
-  return `${SHARED_SHELL}${typo}${HEADING_INTERACTION_STYLE}${buildStageScript(scale)}${HEADING_INTERACTION_SCRIPT}`;
+  return `${SHARED_SHELL}${typo}${HEADING_INTERACTION_STYLE}`;
 }
 
 function injectIntoHtml(html: string, inject: string): string {
@@ -417,6 +249,51 @@ function injectIntoHtml(html: string, inject: string): string {
   return `<!DOCTYPE html><html lang="zh-Hans"><head>${inject}</head><body>${html}</body></html>`;
 }
 
+function prepareEpubPreviewHtml(html: string): string {
+  if (typeof DOMParser === "undefined") {
+    return sanitizeEpubHtml(html);
+  }
+
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  sanitizeEpubDocument(doc);
+
+  const head = doc.head;
+  if (head) {
+    let viewport = head.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    if (!viewport) {
+      viewport = doc.createElement("meta");
+      viewport.setAttribute("name", "viewport");
+      head.appendChild(viewport);
+    }
+    viewport.setAttribute("content", "width=device-width, initial-scale=1");
+  }
+
+  const body = doc.body;
+  if (body && !doc.getElementById("summary-epub-stage")) {
+    const stage = doc.createElement("div");
+    stage.id = "summary-epub-stage";
+    const root = doc.createElement("div");
+    root.id = "summary-epub-root";
+    while (body.firstChild) {
+      root.appendChild(body.firstChild);
+    }
+    stage.appendChild(root);
+    body.appendChild(stage);
+  }
+
+  doc.querySelectorAll("table").forEach((table) => {
+    if (table.parentElement?.classList.contains("summary-epub-table-scroll")) {
+      return;
+    }
+    const wrap = doc.createElement("div");
+    wrap.className = "summary-epub-table-scroll";
+    table.parentNode?.insertBefore(wrap, table);
+    wrap.appendChild(table);
+  });
+
+  return `<!DOCTYPE html>${doc.documentElement.outerHTML}`;
+}
+
 /** Apply reading shell + optional typography (global mode). */
 export function applyEpubDisplayMode(
   html: string,
@@ -425,7 +302,7 @@ export function applyEpubDisplayMode(
   layout: EpubReaderLayout = "embedded",
 ): string {
   return injectIntoHtml(
-    sanitizeEpubPreviewHtml(html),
+    prepareEpubPreviewHtml(html),
     buildInject(mode, readerSettings, layout),
   );
 }

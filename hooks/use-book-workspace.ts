@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useActiveBookState } from "@/hooks/use-active-book-state";
 import {
   useBookLibraryState,
   type DownloadProgress,
@@ -343,9 +344,8 @@ export function useBookWorkspace() {
     downloadError,
     setDownloadError,
   } = useBookLibraryState();
-  const [book, setBook] = useState<StoredBook | null>(null);
-  const [blob, setBlob] = useState<Blob | null>(null);
-  const [bookBuffer, setBookBuffer] = useState<ArrayBuffer | null>(null);
+  const { book, setBook, blob, setBlob, bookBuffer, setBookBuffer } =
+    useActiveBookState();
   const {
     activeSectionId,
     setActiveSectionId,
@@ -568,6 +568,7 @@ export function useBookWorkspace() {
       resetSelectedSummaryState,
       setActiveBlockId,
       setActiveSectionId,
+      setBookBuffer,
       setHighlightBlockIds,
       setLoadingPreview,
       setPreviewHtml,
@@ -693,6 +694,9 @@ export function useBookWorkspace() {
     setActiveBlockId,
     setActiveSectionId,
     setAutoSummaryOnReading,
+    setBlob,
+    setBook,
+    setBookBuffer,
     setHighlightBlockIds,
     setLoadingPreview,
     setPreviewHtml,
@@ -1014,6 +1018,7 @@ export function useBookWorkspace() {
       blob,
       book,
       bookBuffer,
+      setBookBuffer,
       setSearchError,
       setSearchQuery,
       setSearchResults,
@@ -1188,6 +1193,7 @@ export function useBookWorkspace() {
     book,
     selectedSummaryResult,
     resetSelectedSummaryState,
+    setBook,
     setActiveBlockId,
     setHighlightBlockIds,
     summarizingSelectedBlocks,
@@ -1280,6 +1286,7 @@ export function useBookWorkspace() {
     sectionBlocks,
     selectedBlockIds,
     selectedResultFromSummary,
+    setBook,
     summaryEnabledForActiveBook,
     setActiveBlockId,
     setHighlightBlockIds,
@@ -1355,6 +1362,7 @@ export function useBookWorkspace() {
       activeSectionId,
       book,
       sectionBlocks,
+      setBook,
       setActiveBlockId,
       setHighlightBlockIds,
       setSelectedSummaryError,
@@ -1428,6 +1436,7 @@ export function useBookWorkspace() {
       activeSectionId,
       book,
       sectionBlocks,
+      setBook,
       setActiveBlockId,
       setHighlightBlockIds,
       setSelectedSummaryError,
@@ -1447,7 +1456,7 @@ export function useBookWorkspace() {
       setBook({ ...current, comments });
       return true;
     },
-    [book, summaryEnabledForActiveBook],
+    [book, setBook, summaryEnabledForActiveBook],
   );
 
   const blockIdsForSummary = useCallback(
@@ -1617,7 +1626,7 @@ export function useBookWorkspace() {
         );
       }
     },
-    [book, setActiveBlockId, setHighlightBlockIds, summaryEnabledForActiveBook],
+    [book, setActiveBlockId, setBook, setHighlightBlockIds, summaryEnabledForActiveBook],
   );
 
   const summarizeActiveSection = useCallback(async (): Promise<SectionSummary | null> => {
@@ -1684,6 +1693,7 @@ export function useBookWorkspace() {
     activeSectionId,
     persistSummary,
     sectionBlocks,
+    setBookBuffer,
     summaryEnabledForActiveBook,
     setHighlightBlockIds,
   ]);
@@ -2261,6 +2271,9 @@ export function useBookWorkspace() {
       book,
       refreshLibrary,
       setActiveSectionId,
+      setBlob,
+      setBook,
+      setBookBuffer,
       setHighlightBlockIds,
       setPreviewHtml,
       setSearchError,

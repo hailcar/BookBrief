@@ -2,6 +2,7 @@
  * Section = one OPF spine item (stable id: spine-{index}).
  */
 import type { EpubSection } from "@/lib/types";
+import { extractPlainTextFromEpubHtml, sanitizeEpubHtml } from "@/lib/epub/sanitize";
 
 type SpineItem = { href: string; index: number; idref?: string };
 
@@ -106,9 +107,7 @@ export async function parseEpubSections(arrayBuffer: ArrayBuffer): Promise<{
 }
 
 function stripHtml(html: string): string {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  doc.querySelectorAll("script, style").forEach((el) => el.remove());
-  return (doc.body?.textContent ?? "").replace(/\s+/g, " ").trim();
+  return extractPlainTextFromEpubHtml(html);
 }
 
 function textFromLoadedSection(loaded: string | Document | null): string {
@@ -131,7 +130,8 @@ export async function loadSectionContent(
     }
 
     const renderedHtml = await spineSection.render(book.load.bind(book));
-    return { html: renderedHtml, text: stripHtml(renderedHtml) };
+    const html = sanitizeEpubHtml(renderedHtml);
+    return { html, text: stripHtml(html) };
   } finally {
     book.destroy();
   }

@@ -1,4 +1,4 @@
-/** Injected into EPUB iframe: heading hover actions + highlight + postMessage to parent. */
+/** Parent-controlled EPUB iframe reader UI: heading actions, selection, comments, and summary rail. */
 
 export const HEADING_INTERACTION_STYLE = `
 <style id="summary-epub-heading-ui">
@@ -711,7 +711,7 @@ export const HEADING_INTERACTION_SCRIPT = `
   }
   function postToParent(payload) {
     if (window.parent && window.parent !== window) {
-      window.parent.postMessage(payload, '*');
+      window.parent.postMessage(payload, window.location.origin);
     }
   }
   function selectedReadableBlocks(range) {
@@ -1381,3 +1381,55 @@ export const HEADING_INTERACTION_SCRIPT = `
 })();
 </script>
 `;
+
+export type HeadingInteractionMessage = {
+  type?: string;
+  [key: string]: unknown;
+};
+
+export type HeadingInteractionBridge = {
+  postToParent: (payload: HeadingInteractionMessage) => void;
+  receive?: (event: { data: HeadingInteractionMessage }) => void;
+};
+
+function headingRuntimeSource(): string {
+  const start = HEADING_INTERACTION_SCRIPT.indexOf("(function () {");
+  const end = HEADING_INTERACTION_SCRIPT.lastIndexOf("})();");
+  if (start < 0 || end <= start) {
+    throw new Error("EPUB heading interaction runtime is unavailable");
+  }
+  return HEADING_INTERACTION_SCRIPT.slice(start, end + "})();".length)
+    .replace(
+      "window.parent.postMessage(payload, window.location.origin);",
+      "bridge.postToParent(payload);",
+    )
+    .replace(
+      "if (typeof IntersectionObserver === 'undefined') return;",
+      "if (!window.IntersectionObserver) return;",
+    )
+    .replace(
+      "var observer = new IntersectionObserver(function (entries) {",
+      "var observer = new window.IntersectionObserver(function (entries) {",
+    )
+    .replaceAll("NodeFilter.", "window.NodeFilter.")
+    .replace(
+      "window.addEventListener('message', onMessage);",
+      "bridge.receive = onMessage;",
+    );
+}
+
+export function installHeadingInteractionRuntime(
+  iframeWindow: Window,
+  iframeDocument: Document,
+  bridge: HeadingInteractionBridge,
+): void {
+  const source = headingRuntimeSource();
+  // The source is static application code. It is executed from the parent realm
+  // so the iframe can stay sandboxed without allow-scripts.
+  const run = new Function("window", "document", "bridge", source) as (
+    iframeWindow: Window,
+    iframeDocument: Document,
+    bridge: HeadingInteractionBridge,
+  ) => void;
+  run(iframeWindow, iframeDocument, bridge);
+}
