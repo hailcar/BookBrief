@@ -493,6 +493,13 @@ export function EpubSectionPreview({
       const win = iframe?.contentWindow;
       const doc = win?.document;
       if (!iframe || !win || !doc) return;
+      if (
+        doc.documentElement?.getAttribute("data-summary-epub-runtime") ===
+          "ready" &&
+        interactionBridgesRef.current.has(iframe)
+      ) {
+        return;
+      }
 
       const bridge: HeadingInteractionBridge = {
         postToParent: (payload) => {
@@ -567,6 +574,21 @@ export function EpubSectionPreview({
       srcDoc,
     ],
   );
+
+  useEffect(() => {
+    const iframe = iframeForSlot(activeSlot);
+    const doc = iframe?.contentWindow?.document;
+    if (!iframe || !doc || doc.readyState === "loading") return;
+    installFrameInteraction(activeSlot);
+    hydrateFrame(activeSlot, scrollTopRequest);
+  }, [
+    activeSlot,
+    frameDocs,
+    hydrateFrame,
+    iframeForSlot,
+    installFrameInteraction,
+    scrollTopRequest,
+  ]);
 
   useEffect(() => {
     return () => {

@@ -117,6 +117,15 @@ describe("heading summary floating rail", () => {
     expect(HEADING_INTERACTION_SCRIPT).toContain(
       "function scheduleTextSelectionAction",
     );
+    expect(HEADING_INTERACTION_SCRIPT).toContain(
+      "data-summary-epub-runtime",
+    );
+    expect(HEADING_INTERACTION_SCRIPT).toContain(
+      "globalThis.setTimeout",
+    );
+    expect(HEADING_INTERACTION_SCRIPT).toContain(
+      "globalThis.requestAnimationFrame",
+    );
     expect(HEADING_INTERACTION_SCRIPT).toContain("function wrapQuoteInBlock");
     expect(HEADING_INTERACTION_SCRIPT).toContain("range.surroundContents(mark)");
     expect(HEADING_INTERACTION_SCRIPT).toContain(

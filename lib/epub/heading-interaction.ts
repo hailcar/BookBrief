@@ -470,7 +470,7 @@ export const HEADING_INTERACTION_SCRIPT = `
   }
   function clearTextSelectionAction() {
     if (textSelectionActionTimer) {
-      window.clearTimeout(textSelectionActionTimer);
+      globalThis.clearTimeout(textSelectionActionTimer);
       textSelectionActionTimer = null;
     }
     currentTextSelection = null;
@@ -1195,7 +1195,7 @@ export const HEADING_INTERACTION_SCRIPT = `
   var visibleTimers = {};
   function notifyHeadingVisible(blockId) {
     if (!blockId || visibleTimers[blockId]) return;
-    visibleTimers[blockId] = window.setTimeout(function () {
+    visibleTimers[blockId] = globalThis.setTimeout(function () {
       delete visibleTimers[blockId];
       postToParent({
         type: 'summary-epub-heading-visible',
@@ -1214,7 +1214,7 @@ export const HEADING_INTERACTION_SCRIPT = `
         if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
           notifyHeadingVisible(blockId);
         } else if (visibleTimers[blockId]) {
-          window.clearTimeout(visibleTimers[blockId]);
+          globalThis.clearTimeout(visibleTimers[blockId]);
           delete visibleTimers[blockId];
         }
       });
@@ -1296,8 +1296,8 @@ export const HEADING_INTERACTION_SCRIPT = `
     scheduleTextSelectionAction(0);
   }
   function scheduleTextSelectionAction(delay) {
-    if (textSelectionActionTimer) window.clearTimeout(textSelectionActionTimer);
-    textSelectionActionTimer = window.setTimeout(function () {
+    if (textSelectionActionTimer) globalThis.clearTimeout(textSelectionActionTimer);
+    textSelectionActionTimer = globalThis.setTimeout(function () {
       textSelectionActionTimer = null;
       renderTextSelectionAction(selectionPayload());
     }, delay);
@@ -1364,7 +1364,7 @@ export const HEADING_INTERACTION_SCRIPT = `
   function scheduleReaderWindowCheck() {
     if (readerWindowTicking) return;
     readerWindowTicking = true;
-    window.requestAnimationFrame(maybeNotifyReaderWindowSection);
+    globalThis.requestAnimationFrame(maybeNotifyReaderWindowSection);
   }
   window.addEventListener('resize', function () {
     positionSummaryRail(document.querySelector('.summary-epub-summary-rail'));
@@ -1377,6 +1377,9 @@ export const HEADING_INTERACTION_SCRIPT = `
     scheduleReaderWindowCheck();
   }, { passive: true });
   function run() {
+    if (document.documentElement) {
+      document.documentElement.setAttribute('data-summary-epub-runtime', 'ready');
+    }
     ensureHeadingButtons();
     ensureHeadingObserver();
     window.addEventListener('message', onMessage);
