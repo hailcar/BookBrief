@@ -579,15 +579,15 @@ export function EpubSectionPreview({
     const iframe = iframeForSlot(activeSlot);
     const doc = iframe?.contentWindow?.document;
     if (!iframe || !doc || doc.readyState === "loading") return;
+    // Only (re)install the runtime here — never hydrateFrame. It re-scrolls the
+    // iframe to the (stale) scrollTopRequest on every click, yanking the reader
+    // back to the section's load position. Scroll/state are handled below.
     installFrameInteraction(activeSlot);
-    hydrateFrame(activeSlot, scrollTopRequest);
   }, [
     activeSlot,
     frameDocs,
-    hydrateFrame,
     iframeForSlot,
     installFrameInteraction,
-    scrollTopRequest,
   ]);
 
   useEffect(() => {

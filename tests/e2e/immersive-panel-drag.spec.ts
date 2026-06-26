@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 type PointerCounterWindow = Window & {
   __pointerDown: number;
@@ -6,10 +6,39 @@ type PointerCounterWindow = Window & {
   __pointerUp: number;
 };
 
+async function openCollapsedSummaryButton(page: Page) {
+  const collapsedButton = page.locator(".summary-panel-collapsed-drag-handle");
+  await expect(collapsedButton).toBeVisible();
+  await collapsedButton.click();
+  await expect(page.locator(".summary-panel-drag-handle")).toBeVisible();
+}
+
+test("immersive summary panel starts collapsed in the top-right corner", async ({
+  page,
+}) => {
+  await page.goto("/debug-immersive", {
+    waitUntil: "networkidle",
+  });
+
+  await expect(page.locator("aside")).toHaveCount(0);
+
+  const collapsedButton = page.locator(".summary-panel-collapsed-drag-handle");
+  await expect(collapsedButton).toBeVisible();
+
+  const box = await collapsedButton.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(box!.x).toBeGreaterThan(viewport!.width - box!.width - 40);
+  expect(box!.y).toBeLessThan(40);
+});
+
 test("immersive summary panel drag updates position", async ({ page }) => {
   await page.goto("/debug-immersive", {
     waitUntil: "networkidle",
   });
+
+  await openCollapsedSummaryButton(page);
 
   const handle = page.locator(".summary-panel-drag-handle");
   await expect(handle).toBeVisible();
@@ -115,4 +144,106 @@ test("immersive summary panel drag updates position", async ({ page }) => {
   expect(beforeRect).not.toEqual(afterRect);
   expect(beforeRect!.x).not.toBe(afterRect!.x);
   expect(beforeRect!.y).not.toBe(afterRect!.y);
+});
+
+test("immersive summary panel keeps position after reload", async ({ page }) => {
+  await page.goto("/debug-immersive", {
+    waitUntil: "networkidle",
+  });
+
+  await openCollapsedSummaryButton(page);
+
+  const handle = page.locator(".summary-panel-drag-handle");
+  const panel = page.locator("aside").filter({ has: handle });
+  await expect(panel).toBeVisible();
+
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) {
+    throw new Error("Could not get panel handle geometry");
+  }
+
+  const startX = handleBox.x + 8;
+  const startY = handleBox.y + 8;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 120, startY + 70, { steps: 5 });
+  await page.mouse.up();
+
+  const movedRect = await panel.boundingBox();
+  expect(movedRect).not.toBeNull();
+
+  await page.reload({ waitUntil: "networkidle" });
+
+  const restoredHandle = page.locator(".summary-panel-drag-handle");
+  const restoredPanel = page.locator("aside").filter({ has: restoredHandle });
+  await expect(restoredPanel).toBeVisible();
+
+  const restoredRect = await restoredPanel.boundingBox();
+  expect(restoredRect).not.toBeNull();
+  expect(Math.abs(restoredRect!.x - movedRect!.x)).toBeLessThan(2);
+  expect(Math.abs(restoredRect!.y - movedRect!.y)).toBeLessThan(2);
+});
+
+test("collapsed immersive summary button remains draggable without reopening", async ({
+  page,
+}) => {
+  await page.goto("/debug-immersive", {
+    waitUntil: "networkidle",
+  });
+
+  const collapsedButton = page.locator(".summary-panel-collapsed-drag-handle");
+  await expect(collapsedButton).toBeVisible();
+
+  const beforeRect = await collapsedButton.boundingBox();
+  if (!beforeRect) {
+    throw new Error("Could not get collapsed button geometry");
+  }
+
+  const startX = beforeRect.x + beforeRect.width / 2;
+  const startY = beforeRect.y + beforeRect.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 120, startY + 70, { steps: 5 });
+  await page.mouse.up();
+
+  await expect(collapsedButton).toBeVisible();
+  await expect(page.locator("aside")).toHaveCount(0);
+
+  const afterRect = await collapsedButton.boundingBox();
+  expect(afterRect).not.toBeNull();
+  expect(afterRect!.x).not.toBe(beforeRect.x);
+  expect(afterRect!.y).not.toBe(beforeRect.y);
+});
+
+test("dragging expanded panel does not block reopening from collapsed button", async ({
+  page,
+}) => {
+  await page.goto("/debug-immersive", {
+    waitUntil: "networkidle",
+  });
+
+  await openCollapsedSummaryButton(page);
+
+  const handle = page.locator(".summary-panel-drag-handle");
+  await expect(handle).toBeVisible();
+
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) {
+    throw new Error("Could not get panel handle geometry");
+  }
+
+  const startX = handleBox.x + 8;
+  const startY = handleBox.y + 8;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY + 50, { steps: 4 });
+  await page.mouse.up();
+
+  await page.getByRole("button", { name: "收起 AI 总结" }).click();
+
+  const collapsedButton = page.locator(".summary-panel-collapsed-drag-handle");
+  await expect(collapsedButton).toBeVisible();
+  await collapsedButton.click();
+
+  await expect(handle).toBeVisible();
 });

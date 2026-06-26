@@ -51,6 +51,7 @@ describe("selected paragraph summary workflow", () => {
     const preview = source("components/epub-section-preview.tsx");
     const contentPane = source("components/reader-content-pane.tsx");
     const workspace = source("components/epub-workspace.tsx");
+    const hook = source("hooks/use-book-workspace.ts");
 
     expect(preview).not.toContain("selectionAnchorBlockId?: string | null");
     expect(preview).not.toContain("anchorBlockId: selectionAnchorBlockId ?? null");
@@ -66,6 +67,8 @@ describe("selected paragraph summary workflow", () => {
     expect(preview).toContain('data?.type === "summary-epub-clear-reader-selection"');
     expect(preview).toContain("onClearSelectionStable();");
     expect(contentPane).toContain("onClearSelection={onClearSelection}");
+    expect(hook).toContain("const clearSelectedSummary = useCallback(() => {");
+    expect(hook).toContain("setScrollToBlockRequest(null);");
   });
 
   it("keeps selected block state ordered and clears it when sections change", () => {
@@ -500,7 +503,8 @@ describe("selected paragraph summary workflow", () => {
     expect(iframeScript).toContain("addActionButton('翻译'");
     expect(iframeScript).toContain("function selectionFragments");
     expect(iframeScript).toContain("sourceFragments");
-    expect(iframeScript).toContain("if (quote) return");
+    expect(iframeScript).not.toContain("if (quote) return");
+    expect(iframeScript).toContain("if (!byBlock[blockId]) byBlock[blockId] = []");
     expect(iframeScript).toContain("function wrapQuoteInBlock");
     expect(iframeScript).not.toContain("summary-epub-comment-selection");
   });

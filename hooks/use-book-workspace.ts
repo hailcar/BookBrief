@@ -1138,7 +1138,13 @@ export function useBookWorkspace() {
     resetSelectedSummaryState();
     setActiveBlockId(null);
     setHighlightBlockIds([]);
-  }, [resetSelectedSummaryState, setActiveBlockId, setHighlightBlockIds]);
+    setScrollToBlockRequest(null);
+  }, [
+    resetSelectedSummaryState,
+    setActiveBlockId,
+    setHighlightBlockIds,
+    setScrollToBlockRequest,
+  ]);
 
   const canDeleteActiveSummary =
     summaryEnabledForActiveBook &&

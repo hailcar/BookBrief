@@ -586,6 +586,35 @@ export const HEADING_INTERACTION_SCRIPT = `
     while ((node = walker.nextNode())) nodes.push(node);
     return nodes;
   }
+  function normalizeQuoteText(value) {
+    return escapeText(value).replace(/\\s+/g, ' ').trim();
+  }
+  function findQuoteRange(fullText, quote) {
+    var normalizedQuote = normalizeQuoteText(quote);
+    if (!normalizedQuote) return null;
+    var normalizedText = '';
+    var charMap = [];
+    var pendingWhitespaceAt = -1;
+    for (var i = 0; i < fullText.length; i += 1) {
+      var char = fullText.charAt(i);
+      if (/\\s/.test(char)) {
+        if (pendingWhitespaceAt < 0) pendingWhitespaceAt = i;
+        continue;
+      }
+      if (pendingWhitespaceAt >= 0 && normalizedText.length > 0) {
+        normalizedText += ' ';
+        charMap.push(pendingWhitespaceAt);
+        pendingWhitespaceAt = -1;
+      }
+      normalizedText += char;
+      charMap.push(i);
+    }
+    var index = normalizedText.indexOf(normalizedQuote);
+    if (index < 0) return null;
+    var start = charMap[index];
+    var end = charMap[index + normalizedQuote.length - 1] + 1;
+    return { start: start, end: end };
+  }
   function wrapQuoteInBlock(block, quote, annotation, options) {
     if (!block || !quote) return false;
     var nodes = textNodesIn(block, options);
@@ -596,9 +625,10 @@ export const HEADING_INTERACTION_SCRIPT = `
       fullText += node.nodeValue || '';
       ranges.push({ node: node, start: start, end: fullText.length });
     });
-    var index = fullText.indexOf(quote);
-    if (index < 0) return false;
-    var endIndex = index + quote.length;
+    var match = findQuoteRange(fullText, quote);
+    if (!match) return false;
+    var index = match.start;
+    var endIndex = match.end;
     var startInfo = null;
     var endInfo = null;
     ranges.forEach(function (item) {
@@ -628,7 +658,7 @@ export const HEADING_INTERACTION_SCRIPT = `
     var marks = Array.prototype.slice.call(block.querySelectorAll('.summary-epub-comment-mark'));
     for (var i = 0; i < marks.length; i += 1) {
       var mark = marks[i];
-      if (escapeText(mark.textContent).indexOf(quote) < 0) continue;
+      if (!findQuoteRange(escapeText(mark.textContent), quote)) continue;
       var annotations = annotationsForElement(mark);
       annotations.push(annotation);
       setAnnotationData(mark, annotations);
@@ -675,7 +705,6 @@ export const HEADING_INTERACTION_SCRIPT = `
         });
       }
       if (marked) return;
-      if (quote) return;
       comment.blockIds.forEach(function (blockId) {
         if (!blockId) return;
         if (!byBlock[blockId]) byBlock[blockId] = [];
