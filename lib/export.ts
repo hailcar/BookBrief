@@ -10,6 +10,7 @@ import type {
   LibraryBackupPayload,
   ParsedBackupBook,
   ParsedBackupPayload,
+  ReadingBookmark,
   SectionSummary,
   StoredBook,
 } from "@/lib/types";
@@ -64,6 +65,119 @@ export function backupFileNameForBook(book: Pick<StoredBook, "fileName">): strin
 
 export function backupFileNameForLibrary(): string {
   return "summary-epub-library-backup.json";
+}
+
+export function markdownFileNameForBook(book: Pick<StoredBook, "fileName">): string {
+  return `${safeFileBase(book.fileName)}-notes.md`;
+}
+
+function markdownEscapeText(value: string): string {
+  return value.replace(/\r\n?/g, "\n").trim();
+}
+
+function markdownSectionHeading(level: number, title: string): string {
+  return `${"#".repeat(level)} ${markdownEscapeText(title) || "未命名"}`;
+}
+
+function sortBySectionOrder<T extends { sectionId: string; updatedAt?: number }>(
+  values: T[],
+  sections: StoredBook["sections"],
+): T[] {
+  const sectionOrder = new Map(
+    sections.map((section, index) => [section.id, index]),
+  );
+  return [...values].sort((a, b) => {
+    const sectionDelta =
+      (sectionOrder.get(a.sectionId) ?? Number.MAX_SAFE_INTEGER) -
+      (sectionOrder.get(b.sectionId) ?? Number.MAX_SAFE_INTEGER);
+    if (sectionDelta !== 0) return sectionDelta;
+    return (a.updatedAt ?? 0) - (b.updatedAt ?? 0);
+  });
+}
+
+function sectionTitleForId(
+  sectionId: string,
+  sections: StoredBook["sections"],
+): string {
+  return sections.find((section) => section.id === sectionId)?.title ?? sectionId;
+}
+
+function summaryLabel(summary: SectionSummary): string {
+  if (summary.headingText) return `标题总结：${summary.headingText}`;
+  if (summary.scopeType === "selected_blocks") return "所选段落总结";
+  if (summary.scopeType === "paragraph") return "段落总结";
+  return "章节总结";
+}
+
+export function buildMarkdownReadingNotes(params: {
+  book: StoredBook;
+  bookmarks?: ReadingBookmark[];
+}): string {
+  const { book, bookmarks = [] } = params;
+  const lines: string[] = [
+    markdownSectionHeading(1, book.fileName),
+    "",
+    `- 格式：${documentFormatForBook(book.fileName, book.format).toUpperCase()}`,
+    `- 导出时间：${new Date().toISOString()}`,
+    `- 小节数：${book.sections.length}`,
+    "",
+  ];
+
+  const sortedBookmarks = [...bookmarks].sort((a, b) => a.createdAt - b.createdAt);
+  if (sortedBookmarks.length > 0) {
+    lines.push(markdownSectionHeading(2, "书签"), "");
+    for (const bookmark of sortedBookmarks) {
+      lines.push(`- ${markdownEscapeText(bookmark.title)} (${bookmark.sectionId})`);
+    }
+    lines.push("");
+  }
+
+  const summaries = sortBySectionOrder(
+    Object.values(book.summaries).filter((summary) => summary.summary.trim()),
+    book.sections,
+  );
+  if (summaries.length > 0) {
+    lines.push(markdownSectionHeading(2, "AI 总结"), "");
+    let previousSectionId: string | null = null;
+    for (const summary of summaries) {
+      if (summary.sectionId !== previousSectionId) {
+        lines.push(
+          markdownSectionHeading(3, sectionTitleForId(summary.sectionId, book.sections)),
+          "",
+        );
+        previousSectionId = summary.sectionId;
+      }
+      lines.push(`#### ${markdownEscapeText(summaryLabel(summary))}`, "");
+      lines.push(markdownEscapeText(summary.summary), "");
+    }
+  }
+
+  const comments = sortBySectionOrder(
+    Object.values(book.comments ?? {}).filter((comment) => comment.comment.trim()),
+    book.sections,
+  );
+  if (comments.length > 0) {
+    lines.push(markdownSectionHeading(2, "批注与翻译"), "");
+    let previousSectionId: string | null = null;
+    for (const comment of comments) {
+      if (comment.sectionId !== previousSectionId) {
+        lines.push(
+          markdownSectionHeading(3, sectionTitleForId(comment.sectionId, book.sections)),
+          "",
+        );
+        previousSectionId = comment.sectionId;
+      }
+      const label = comment.kind === "translation" ? "翻译" : "评论";
+      lines.push(`#### ${label}`, "");
+      if (comment.sourceText?.trim()) {
+        lines.push("> " + markdownEscapeText(comment.sourceText).replace(/\n/g, "\n> "));
+        lines.push("");
+      }
+      lines.push(markdownEscapeText(comment.comment), "");
+    }
+  }
+
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
 }
 
 function summariesArrayToRecord(
@@ -289,6 +403,17 @@ export function downloadJson(filename: string, data: unknown): void {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
     type: "application/json",
   });
+  downloadBlob(filename, blob);
+}
+
+export function downloadMarkdown(filename: string, markdown: string): void {
+  downloadBlob(
+    filename,
+    new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
+  );
+}
+
+function downloadBlob(filename: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

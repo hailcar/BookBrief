@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Database,
   Download,
+  FileDown,
   KeyRound,
   Link,
   Settings,
@@ -381,6 +382,21 @@ export function EpubWorkspace() {
     [summaryEnabled, ws],
   );
 
+  const onActivateAnnotation = useCallback(
+    async (annotationId: string) => {
+      if (!summaryEnabled) return;
+      try {
+        const activated = await ws.activateAnnotation(annotationId);
+        if (!activated) {
+          toast.error("未找到对应批注");
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "跳转批注失败");
+      }
+    },
+    [summaryEnabled, ws],
+  );
+
   const onHeadingVisible = (headingBlockId: string) => {
     if (!summaryEnabled) return;
     if (!ws.autoSummaryOnReading || !activeSection) return;
@@ -720,7 +736,7 @@ export function EpubWorkspace() {
                 </p>
               ) : null}
             </div>
-            <div className="grid grid-cols-[44px_44px_minmax(0,1fr)] items-center gap-2 sm:flex sm:flex-wrap lg:justify-end">
+            <div className="grid grid-cols-[44px_44px_44px_minmax(0,1fr)] items-center gap-2 sm:flex sm:flex-wrap lg:justify-end">
               <Button
                 variant="outline"
                 className="h-11 w-11 gap-1.5 bg-white/70 sm:h-10 sm:w-auto"
@@ -739,6 +755,16 @@ export function EpubWorkspace() {
               >
                 <Download className="h-4 w-4" />
                 <span className="hidden sm:inline">导出 JSON</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="h-11 w-11 gap-1.5 bg-white/70 sm:h-10 sm:w-auto"
+                disabled={!ws.book}
+                aria-label="导出 Markdown"
+                onClick={() => ws.exportMarkdownNotes()}
+              >
+                <FileDown className="h-4 w-4" />
+                <span className="hidden sm:inline">导出 Markdown</span>
               </Button>
               <Button
                 className="h-11 min-w-0 gap-1.5 shadow-sm shadow-primary/15 sm:h-10"
@@ -991,6 +1017,19 @@ export function EpubWorkspace() {
                         }
                         onRetrySummaryTask={
                           summaryEnabled ? ws.retrySummaryTask : undefined
+                        }
+                        comments={summaryEnabled ? ws.book.comments : {}}
+                        onActivateAnnotation={
+                          summaryEnabled
+                            ? (annotationId) =>
+                                void onActivateAnnotation(annotationId)
+                            : undefined
+                        }
+                        onDeleteAnnotation={
+                          summaryEnabled
+                            ? (annotationId) =>
+                                void onDeleteAnnotation(annotationId)
+                            : undefined
                         }
                       />
                     </CardContent>

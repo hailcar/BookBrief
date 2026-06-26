@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMarkdownReadingNotes,
   buildLibraryBackupPayload,
   parseBackupPayload,
 } from "@/lib/export";
@@ -86,5 +87,77 @@ describe("library backup export", () => {
       ],
     });
     expect(parsed.books[0].blob).toBeUndefined();
+  });
+});
+
+describe("markdown reading notes export", () => {
+  it("renders summaries, comments, translations, and bookmarks as notes", () => {
+    const book: StoredBook = {
+      id: "book-1",
+      fileName: "Book.epub",
+      format: "epub",
+      uploadedAt: 123,
+      sections: [
+        { id: "spine-0", index: 0, title: "Intro", href: "intro.xhtml" },
+        { id: "spine-1", index: 1, title: "Deep Dive", href: "deep.xhtml" },
+      ],
+      summaries: {
+        "spine-1::h::b1": {
+          sectionId: "spine-1",
+          summary: "Important summary",
+          headingText: "The Point",
+          updatedAt: 300,
+          scopeType: "heading_section",
+        },
+        "selected::spine-0::p1": {
+          sectionId: "spine-0",
+          summary: "Selected summary",
+          updatedAt: 200,
+          scopeType: "selected_blocks",
+        },
+      },
+      comments: {
+        "comment-1": {
+          id: "comment-1",
+          sectionId: "spine-0",
+          blockIds: ["p1"],
+          comment: "My comment",
+          sourceText: "Original quote",
+          createdAt: 400,
+          updatedAt: 400,
+        },
+        "translation-1": {
+          id: "translation-1",
+          sectionId: "spine-1",
+          blockIds: ["p2"],
+          comment: "Translated text",
+          kind: "translation",
+          sourceText: "Source text",
+          createdAt: 500,
+          updatedAt: 500,
+        },
+      },
+    };
+
+    const markdown = buildMarkdownReadingNotes({
+      book,
+      bookmarks: [{ sectionId: "spine-1", title: "Deep Dive", createdAt: 100 }],
+    });
+
+    expect(markdown).toContain("# Book.epub");
+    expect(markdown).toContain("## 书签");
+    expect(markdown).toContain("- Deep Dive (spine-1)");
+    expect(markdown).toContain("### Intro");
+    expect(markdown).toContain("#### 所选段落总结");
+    expect(markdown).toContain("Selected summary");
+    expect(markdown).toContain("### Deep Dive");
+    expect(markdown).toContain("#### 标题总结：The Point");
+    expect(markdown).toContain("Important summary");
+    expect(markdown).toContain("## 批注与翻译");
+    expect(markdown).toContain("#### 评论");
+    expect(markdown).toContain("> Original quote");
+    expect(markdown).toContain("My comment");
+    expect(markdown).toContain("#### 翻译");
+    expect(markdown).toContain("Translated text");
   });
 });

@@ -3,6 +3,8 @@
 import {
   Bookmark,
   BookmarkCheck,
+  Languages,
+  MessageSquareText,
   Pause,
   Play,
   RotateCcw,
@@ -16,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type {
+  EpubComment,
   EpubSearchResult,
   EpubSection,
   ReadingBookmark,
@@ -52,6 +55,9 @@ type Props = {
   onCancelSummaryQueue?: () => void;
   onClearFinishedSummaryTasks?: () => void;
   onRetrySummaryTask?: (taskId: string) => void;
+  comments?: Record<string, EpubComment>;
+  onActivateAnnotation?: (annotationId: string) => void;
+  onDeleteAnnotation?: (annotationId: string) => void;
 };
 
 export function EpubReaderTools({
@@ -82,9 +88,22 @@ export function EpubReaderTools({
   onCancelSummaryQueue,
   onClearFinishedSummaryTasks,
   onRetrySummaryTask,
+  comments = {},
+  onActivateAnnotation,
+  onDeleteAnnotation,
 }: Props) {
   const bookmarkedSectionIds = bookmarks.map((bookmark) => bookmark.sectionId);
   const byId = new Map(sections.map((section) => [section.id, section]));
+  const sectionOrder = new Map(
+    sections.map((section, index) => [section.id, index]),
+  );
+  const annotations = Object.values(comments).sort((a, b) => {
+    const sectionDelta =
+      (sectionOrder.get(a.sectionId) ?? Number.MAX_SAFE_INTEGER) -
+      (sectionOrder.get(b.sectionId) ?? Number.MAX_SAFE_INTEGER);
+    if (sectionDelta !== 0) return sectionDelta;
+    return a.updatedAt - b.updatedAt;
+  });
 
   const selectById = (sectionId: string) => {
     const section = byId.get(sectionId);
@@ -292,6 +311,72 @@ export function EpubReaderTools({
                 ))}
               </ul>
             ) : null}
+          </section>
+        ) : null}
+
+        {summaryEnabled ? (
+          <section className="space-y-2 border-b border-border/65 pb-4">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold tracking-tight">
+                批注与翻译
+              </h2>
+              <span className="rounded-md bg-white/50 px-1.5 py-1 text-[11px] text-muted-foreground">
+                {annotations.length}
+              </span>
+            </div>
+            {annotations.length > 0 ? (
+              <ul className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                {annotations.map((annotation) => {
+                  const sectionTitle =
+                    byId.get(annotation.sectionId)?.title ?? annotation.sectionId;
+                  const isTranslation = annotation.kind === "translation";
+                  return (
+                    <li
+                      key={annotation.id}
+                      className="rounded-lg border bg-white/45 p-2 text-xs"
+                    >
+                      <div className="flex items-start gap-2">
+                        {isTranslation ? (
+                          <Languages className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                        ) : (
+                          <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                        )}
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 text-left"
+                          onClick={() => onActivateAnnotation?.(annotation.id)}
+                        >
+                          <span className="line-clamp-1 font-medium">
+                            {sectionTitle}
+                          </span>
+                          {annotation.sourceText ? (
+                            <span className="mt-0.5 line-clamp-2 text-muted-foreground">
+                              {annotation.sourceText}
+                            </span>
+                          ) : null}
+                          <span className="mt-1 line-clamp-3">
+                            {annotation.comment}
+                          </span>
+                        </button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 shrink-0"
+                          aria-label="删除批注"
+                          disabled={!onDeleteAnnotation}
+                          onClick={() => onDeleteAnnotation?.(annotation.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="text-xs text-muted-foreground">暂无批注或翻译</p>
+            )}
           </section>
         ) : null}
 

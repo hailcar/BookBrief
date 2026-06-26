@@ -24,8 +24,11 @@ import {
   backupFileNameForBook,
   backupFileNameForLibrary,
   buildExportPayload,
+  buildMarkdownReadingNotes,
   buildLibraryBackupPayload,
+  downloadMarkdown,
   downloadJson,
+  markdownFileNameForBook,
   parseBackupPayload,
   writeReaderStateFromBackup,
 } from "@/lib/export";
@@ -1459,6 +1462,43 @@ export function useBookWorkspace() {
     [book, setBook, summaryEnabledForActiveBook],
   );
 
+  const activateAnnotation = useCallback(
+    async (annotationId: string): Promise<boolean> => {
+      if (!summaryEnabledForActiveBook) return false;
+      if (!book) return false;
+      const annotation = book.comments?.[annotationId];
+      if (!annotation) return false;
+      const section = book.sections.find(
+        (item) => item.id === annotation.sectionId,
+      );
+      if (!section) return false;
+
+      if (section.id !== activeSectionIdRef.current) {
+        await loadSectionHtml(section);
+      }
+
+      const targetBlockId =
+        annotation.startBlockId ?? annotation.blockIds[0] ?? null;
+      setHighlightBlockIds(annotation.blockIds);
+      setActiveBlockId(targetBlockId);
+      if (targetBlockId) {
+        setScrollToBlockRequest((current) => ({
+          blockId: targetBlockId,
+          nonce: (current?.nonce ?? 0) + 1,
+        }));
+      }
+      return true;
+    },
+    [
+      book,
+      loadSectionHtml,
+      setActiveBlockId,
+      setHighlightBlockIds,
+      setScrollToBlockRequest,
+      summaryEnabledForActiveBook,
+    ],
+  );
+
   const blockIdsForSummary = useCallback(
     (summary: SectionSummary, cacheKey: string): string[] => {
       if (summary.blockIds?.length) return summary.blockIds;
@@ -2109,6 +2149,14 @@ export function useBookWorkspace() {
     downloadJson(`${base}-summaries.json`, buildExportPayload(book));
   }, [book]);
 
+  const exportMarkdownNotes = useCallback(() => {
+    if (!book) return;
+    downloadMarkdown(
+      markdownFileNameForBook(book),
+      buildMarkdownReadingNotes({ book, bookmarks }),
+    );
+  }, [book, bookmarks]);
+
   const loadBookBackupSource = useCallback(
     async (id: string): Promise<{ book: StoredBook; blob: Blob }> => {
       const sourceBook = book?.id === id ? book : await getBook(id);
@@ -2347,6 +2395,7 @@ export function useBookWorkspace() {
     addCommentForTextSelection,
     addTranslationForTextSelection,
     deleteAnnotation,
+    activateAnnotation,
     selectReaderBlock,
     activateSummaryKey,
     enqueueHeadingSummary,
@@ -2363,6 +2412,7 @@ export function useBookWorkspace() {
     autoSummaryOnReading,
     setAutoSummaryOnReading,
     exportData,
+    exportMarkdownNotes,
     exportBookBackup,
     exportCurrentBookBackup,
     exportLibraryBackup,

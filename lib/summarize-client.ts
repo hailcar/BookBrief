@@ -32,6 +32,62 @@ function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
+function modelConnectionErrorMessage(baseUrl: string): string {
+  return [
+    "模型请求失败：浏览器无法连接 Base URL。",
+    "请检查 Base URL 是否完整并以 /v1 结尾、服务是否可访问，以及供应商是否允许浏览器 CORS 跨域请求。",
+    `当前 Base URL：${baseUrl}`,
+  ].join(" ");
+}
+
+async function responseErrorText(res: Response): Promise<string> {
+  const contentType = res.headers.get("content-type") ?? "";
+  try {
+    if (contentType.includes("application/json")) {
+      const data = (await res.json()) as {
+        error?: { message?: unknown; type?: unknown; code?: unknown };
+        message?: unknown;
+      };
+      const message =
+        typeof data.error?.message === "string"
+          ? data.error.message
+          : typeof data.message === "string"
+            ? data.message
+            : "";
+      const code =
+        typeof data.error?.code === "string" ? ` (${data.error.code})` : "";
+      return `${message}${code}`.trim();
+    }
+    return (await res.text()).trim();
+  } catch {
+    return "";
+  }
+}
+
+async function modelHttpErrorMessage(
+  res: Response,
+  settings: { baseUrl: string; model: string },
+): Promise<string> {
+  const detail = (await responseErrorText(res)).slice(0, 300);
+  const suffix = detail ? ` 服务返回：${detail}` : "";
+  if (res.status === 401 || res.status === 403) {
+    return `模型请求失败 (${res.status})：API Key 无效、权限不足或账户不可用。请检查设置中的 API Key 和供应商权限。${suffix}`;
+  }
+  if (res.status === 404) {
+    return `模型请求失败 (404)：未找到 /chat/completions。请检查 Base URL 是否指向 OpenAI-compatible /v1 接口。当前 Base URL：${settings.baseUrl}.${suffix}`;
+  }
+  if (res.status === 400 || res.status === 422) {
+    return `模型请求失败 (${res.status})：请求参数或 Model 可能不被该供应商支持。当前 Model：${settings.model}.${suffix}`;
+  }
+  if (res.status === 429) {
+    return `模型请求失败 (429)：请求过于频繁、额度不足或被限流。请稍后重试或检查供应商额度。${suffix}`;
+  }
+  if (res.status >= 500) {
+    return `模型请求失败 (${res.status})：供应商服务暂时不可用。请稍后重试或换用其他 Base URL。${suffix}`;
+  }
+  return `模型请求失败 (${res.status})：请检查 Base URL、API Key、Model 和 CORS 设置。${suffix}`;
+}
+
 async function chatCompletion(
   system: string,
   userContent: string,
@@ -44,8 +100,14 @@ async function chatCompletion(
     throw new Error("请先在「设置」中填写 API Key（仅存于本机浏览器）。");
   }
 
-  const baseUrl = settings.baseUrl.replace(/\/$/, "");
-  const model = settings.model;
+  const baseUrl = settings.baseUrl.trim().replace(/\/$/, "");
+  if (!baseUrl) {
+    throw new Error("请先在「设置」中填写 Base URL。");
+  }
+  const model = settings.model.trim();
+  if (!model) {
+    throw new Error("请先在「设置」中填写 Model。");
+  }
   const timeoutMs = options.timeoutMs ?? AI_REQUEST_TIMEOUT_MS;
   const controller = new AbortController();
   let timedOut = false;
@@ -88,6 +150,9 @@ async function chatCompletion(
       }
       throw new Error("总结已取消");
     }
+    if (err instanceof TypeError) {
+      throw new Error(modelConnectionErrorMessage(baseUrl));
+    }
     throw err;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
@@ -95,10 +160,7 @@ async function chatCompletion(
   }
 
   if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(
-      `模型请求失败 (${res.status})：${errText.slice(0, 300)}。若浏览器报 CORS，请改用支持跨域的 Base URL 或本地代理。`,
-    );
+    throw new Error(await modelHttpErrorMessage(res, { baseUrl, model }));
   }
 
   const data = (await res.json()) as {

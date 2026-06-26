@@ -90,6 +90,63 @@ describe("summarize client requests", () => {
     await assertion;
   });
 
+  it("diagnoses browser connection or CORS failures", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+
+    await expect(
+      summarizeParagraph("Body text", "Chapter", 1, 1, { timeoutMs: 0 }),
+    ).rejects.toThrow("CORS 跨域请求");
+  });
+
+  it("diagnoses API key authorization failures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "Incorrect API key" } }),
+          {
+            status: 401,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    await expect(
+      summarizeParagraph("Body text", "Chapter", 1, 1, { timeoutMs: 0 }),
+    ).rejects.toThrow("API Key 无效");
+  });
+
+  it("diagnoses missing chat completions endpoints", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("not found", { status: 404 })),
+    );
+
+    await expect(
+      summarizeParagraph("Body text", "Chapter", 1, 1, { timeoutMs: 0 }),
+    ).rejects.toThrow("未找到 /chat/completions");
+  });
+
+  it("diagnoses unsupported model request errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: "model_not_found" } }),
+          {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    await expect(
+      summarizeParagraph("Body text", "Chapter", 1, 1, { timeoutMs: 0 }),
+    ).rejects.toThrow("Model 可能不被该供应商支持");
+  });
+
   it("aborts requests when the caller cancels the summary", async () => {
     const controller = new AbortController();
     vi.stubGlobal("fetch", pendingFetch());
