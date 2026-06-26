@@ -13,6 +13,7 @@
 - AI 设置支持供应商预设、自定义 Base URL、Model、API Key 和 prompt 模板。
 - 总结队列支持暂停、继续、重试和缓存命中；重复点击同一段落/标题优先复用 IndexedDB 中的结果。
 - 支持导出当前书、按书籍导出、全库备份导出，以及导入备份。
+- EPUB 预览经过统一 HTML sanitizer，iframe 使用无脚本 sandbox；阅读交互由父页面接管。
 
 ## 能力边界
 
@@ -45,8 +46,12 @@ https://bb.vim.li/?url=$e_url
 npm run typecheck
 npm run lint
 npm run test
+npm run test:e2e
 npm run build
+npm run test:all
 ```
+
+`npm run test:all` 会依次执行 typecheck、lint、unit test、production build 和 Playwright e2e。GitHub Actions CI 使用同一组门禁，并安装 Playwright Chromium 后运行端到端测试。
 
 包管理器使用 npm，依赖锁定在 `package-lock.json`。内部包名仍为 `summary_epub`，避免影响已有部署和本地数据。
 
@@ -85,6 +90,13 @@ FRONTEND_PORT=3001 docker compose -f compose.example.yml up --build
 - 没有 `app/api/*` 总结接口，也不会把整本书发送给项目服务端。
 - 总结按用户操作触发，一次请求只处理一个选中段落集合、一个标题范围，或必要时处理其中的固定 token 分块。
 - 现有 IndexedDB/localStorage key 保持不变，升级展示名不会清空旧数据。
+
+## EPUB 安全模型
+
+- EPUB HTML 进入预览、block 提取、纯文本提取和连续阅读窗口前都会经过同一 sanitizer。
+- sanitizer 会移除脚本、iframe/object/embed/form/base、meta refresh、事件属性、`srcdoc`、危险 style，以及 `javascript:`/`vbscript:` URL。
+- 导航属性上的 `data:` URL 会被移除；普通 HTTPS 链接、安全图片 URL、表格和标题结构会保留。
+- EPUB iframe 使用 `sandbox="allow-same-origin"`，不允许书籍内容执行脚本；标题按钮、段落选择、批注、翻译、总结气泡和滚动位置上报由父页面 React 逻辑绑定 iframe DOM 实现。
 
 ## 当前限制与候选功能
 
